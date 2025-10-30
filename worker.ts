@@ -10,7 +10,7 @@ interface Env {
   WEBHOOK_SECRET: string; 
   MAIL_KV: KVNamespace; 
 }
-// ကျေးဇူးပြု၍ သင့်၏ Domain ကို ဤနေရာတွင် စစ်ဆေးပါ
+// Email Routing Rule မှာ သတ်မှတ်ထားသော Domain ဖြစ်ပါတယ်
 const TEMP_MAIL_DOMAIN = "kponly.ggff.net"; 
 const TELEGRAM_API = (token: string) => `https://api.telegram.org/bot${token}`;
 
@@ -91,7 +91,8 @@ const handleTelegramWebhook = async (env: Env, request: Request): Promise<Respon
     return new Response('OK', { status: 200 }); 
 
   } catch (e) {
-    console.error('Webhook Handler Error:', e instanceof Error ? e.message : String(e));
+    const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+    console.error('Webhook Handler Error:', errorMessage);
     return new Response('OK (Error handled)', { status: 200 }); 
   }
 };
@@ -130,7 +131,15 @@ export default {
             }
         }
         
-        // 3. To Address မရရှိသေးပါက Reject လုပ်ပါ (Final Rejection)
+        // 🚨 3. FINAL FALLBACK: rcptTo ကို အသုံးပြု၍ စစ်ဆေးခြင်း (Log တွင် တွေ့ရှိရသော Property)
+        if (!toEmail) {
+             const messageWithRcptTo = message as unknown as { rcptTo?: string };
+             if (messageWithRcptTo.rcptTo) {
+                 toEmail = messageWithRcptTo.rcptTo;
+             }
+        }
+        
+        // 4. To Address မရရှိသေးပါက Reject လုပ်ပါ (Final Rejection)
         if (!toEmail) {
              console.error('Email Handler FATAL Error: Cannot determine valid To address after all attempts.');
              return message.setReject('Invalid destination email address received. (Final Address Cannot Be Resolved)'); 
@@ -138,7 +147,7 @@ export default {
 
         const fromDisplay = message.from; 
 
-        // 4. Email address မှ username ကို ခိုင်မာစွာ ခွဲထုတ်ခြင်း
+        // 5. Email address မှ username ကို ခိုင်မာစွာ ခွဲထုတ်ခြင်း
         const usernameMatch = toEmail.match(/^([^@]+)@/);
 
         let username: string;
@@ -149,7 +158,7 @@ export default {
             return message.setReject(`Invalid destination format or username not found in ${toEmail}.`); 
         }
 
-        // 5. KV မှ chat ID ကို ပြန်ရှာပါ
+        // 6. KV မှ chat ID ကို ပြန်ရှာပါ
         const chatIdString = await env.MAIL_KV.get(username); 
         
         if (chatIdString) {
