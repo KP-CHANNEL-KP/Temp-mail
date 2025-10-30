@@ -10,7 +10,8 @@ interface Env {
   WEBHOOK_SECRET: string; 
   MAIL_KV: KVNamespace; 
 }
-const TEMP_MAIL_DOMAIN = "kponly.ggff.net";
+// ကျေးဇူးပြု၍ သင့်၏ Domain ကို ဤနေရာတွင် စစ်ဆေးပါ
+const TEMP_MAIL_DOMAIN = "kponly.ggff.net"; 
 const TELEGRAM_API = (token: string) => `https://api.telegram.org/bot${token}`;
 
 // 3. Function Definitions (const ဖြင့် သတ်မှတ်ပါ)
@@ -110,69 +111,4 @@ export default {
     try {
         let toEmail: string | null = null;
         
-        // 1. message.destination ကို ဦးစားပေး စစ်ဆေးခြင်း (Final Fix)
-        if (message.destination) {
-            toEmail = message.destination;
-        }
-
-        // 2. Fallback: message.to ကို အသုံးပြု၍ စစ်ဆေးခြင်း
-        if (!toEmail) {
-            // message.to ကို array အဖြစ် အမြဲတမ်း ပြောင်းလဲ၍ address ကို ရယူခြင်း
-            // message.to သည် object သို့မဟုတ် array ဖြစ်နိုင်သည်
-            const toList = Array.isArray(message.to) ? message.to : [message.to];
-            
-            // ပထမဆုံး to object ရဲ့ address ကို ထုတ်ယူပါ
-            if (toList.length > 0 && toList[0] && toList[0].address) {
-                toEmail = toList[0].address;
-            }
-        }
-        
-        // 3. To Address မရရှိသေးပါက Reject လုပ်ပါ
-        if (!toEmail) {
-             console.error('Email Handler FATAL Error: Cannot determine valid To address after all attempts.');
-             return message.setReject('Invalid destination email address received. (Final Address Cannot Be Resolved)'); 
-        }
-
-        const fromDisplay = message.from; 
-
-        // 4. Email address မှ username ကို ခိုင်မာစွာ ခွဲထုတ်ခြင်း
-        const usernameMatch = toEmail.match(/^([^@]+)@/);
-
-        let username: string;
-        if (usernameMatch && usernameMatch[1]) {
-            username = usernameMatch[1];
-        } else {
-            console.error('Email Handler FATAL Error: Cannot extract username from:', toEmail);
-            return message.setReject(`Invalid destination format or username not found in ${toEmail}.`); 
-        }
-
-        // 5. KV မှ chat ID ကို ပြန်ရှာပါ
-        const chatIdString = await env.MAIL_KV.get(username); 
-        
-        if (chatIdString) {
-            const chatIdNumber = parseInt(chatIdString); 
-            const subject = message.subject || "(No Subject)";
-            const bodyText = message.text || "(Email Body is empty)";
-
-            const notification = `📧 **Email အသစ် ဝင်လာပြီ**\n\n` + 
-                                 `*To:* \`${toEmail}\`\n` +
-                                 `*From:* ${fromDisplay || 'Unknown Sender'}\n` + 
-                                 `*Subject:* ${subject.substring(0, 100)}\n\n` +
-                                 `*ကိုယ်ထည်အကျဉ်း:* ${bodyText.substring(0, 300)}...`; 
-
-            await sendTelegramMessage(env, chatIdNumber, notification);
-            
-            console.log(`Email successfully forwarded to Telegram Chat ID: ${chatIdNumber} for user: ${username}`);
-        } else {
-            console.log(`Rejecting expired email for user: ${username}`);
-            message.setReject('This temporary email address has expired or is invalid.');
-        }
-
-
-    } catch (e) {
-        const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-        console.error('Email Handler FATAL Error in try block:', errorMessage);
-        message.setReject(`Bot processing error: ${errorMessage.substring(0, 50)}...`); 
-    }
-  }
-};
+        // 1. message.destination ကို ဦးစားပေး စစ်ဆေးခြင်း
