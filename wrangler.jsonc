@@ -1,5 +1,5 @@
 {
-  "name": "bot10temp",
+  "name": "temp-mail-only",
   "compatibility_date": "2024-05-15",
   "main": "worker.ts"
 }
