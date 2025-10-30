@@ -1,10 +1,9 @@
-// worker.ts (Final Working Code - Structure, Webhook, and Email Fixes)
+// worker.ts (Final Working Code - const Functions နှင့် Email Fixes)
 
-// 🚨 1. Imports and Router Initialization (အပေါ်ဆုံးတွင် ရှိရမည်)
 import { Router } from 'itty-router';
-const router = Router(); // 👈 router ကို ဒီနေရာမှာ ချက်ချင်း သတ်မှတ်ပေးလိုက်ပါပြီ
+const router = Router(); 
 
-// 2. Configuration 
+// 1. Configuration 
 interface Env {
   BOT_TOKEN: string; 
   WEBHOOK_SECRET: string; 
@@ -13,9 +12,9 @@ interface Env {
 const TEMP_MAIL_DOMAIN = "kponly.ggff.net";
 const TELEGRAM_API = (token: string) => `https://api.telegram.org/bot${token}`;
 
-// 3. Function Definitions (router ခေါ်တဲ့အပိုင်းအောက် ရောက်နေခဲ့ရင်တောင် အလုပ်လုပ်အောင်)
+// 2. Function Definitions (const ဖြင့် သတ်မှတ်ပါ)
 
-async function sendTelegramMessage(env: Env, chatId: number, text: string): Promise<void> {
+const sendTelegramMessage = async (env: Env, chatId: number, text: string): Promise<void> => {
   const url = `${TELEGRAM_API(env.BOT_TOKEN)}/sendMessage`;
   const response = await fetch(url, {
     method: 'POST',
@@ -30,9 +29,9 @@ async function sendTelegramMessage(env: Env, chatId: number, text: string): Prom
   if (!response.ok) {
     console.error(`Failed to send Telegram message: ${response.status} ${response.statusText}`);
   }
-}
+};
 
-async function setWebhook(env: Env, request: Request): Promise<Response> {
+const setWebhook = async (env: Env, request: Request): Promise<Response> => {
   const url = `${TELEGRAM_API(env.BOT_TOKEN)}/setWebhook`;
   const webhookUrl = new URL(request.url);
   webhookUrl.pathname = '/webhook';
@@ -48,9 +47,9 @@ async function setWebhook(env: Env, request: Request): Promise<Response> {
   });
 
   return new Response(response.ok ? 'Webhook set successfully' : 'Failed to set webhook', { status: response.status });
-}
+};
 
-async function generateTempMail(env: Env, chatId: number): Promise<string> {
+const generateTempMail = async (env: Env, chatId: number): Promise<string> => {
   const length = 8;
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   let username = '';
@@ -59,9 +58,9 @@ async function generateTempMail(env: Env, chatId: number): Promise<string> {
   }
   await env.MAIL_KV.put(username, chatId.toString(), { expirationTtl: 3600 });
   return `${username}@${TEMP_MAIL_DOMAIN}`;
-}
+};
 
-async function handleTelegramWebhook(env: Env, request: Request): Promise<Response> {
+const handleTelegramWebhook = async (env: Env, request: Request): Promise<Response> => {
   const secret = request.headers.get('X-Telegram-Bot-Api-Secret-Token');
   if (secret !== env.WEBHOOK_SECRET) {
     return new Response('Unauthorized', { status: 403 });
@@ -92,32 +91,32 @@ async function handleTelegramWebhook(env: Env, request: Request): Promise<Respon
     console.error('Webhook Handler Error:', e instanceof Error ? e.message : String(e));
     return new Response('OK (Error handled)', { status: 200 }); 
   }
-}
+};
 
-// 4. Router Binding (Functions တွေ declare လုပ်ပြီးမှ bind လုပ်ပါ)
+// 3. Router Binding
 router
   .post('/webhook', (request, env) => handleTelegramWebhook(env as Env, request))
   .get('/registerWebhook', (request, env) => setWebhook(env as Env, request))
   .all('*', () => new Response('Not Found', { status: 404 }));
 
-// 5. Export Default (Worker ရဲ့ Entry Point များ)
+// 4. Export Default
 export default {
   fetch: router.handle,
 
   async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
     try {
-        // Email Address ရယူသော Fallback Logic
+        // Email Address ရယူသော Fallback Logic (message.to ကို array အဖြစ် စီမံခြင်း)
         
         let toEmail: string | null = null;
         
-        // 1. message.to object (Array သို့မဟုတ် Single Object) မှ Address ကို စီမံခြင်း
+        // message.to ကို array အဖြစ် အမြဲတမ်း ပြောင်းလဲ၍ address ကို ရယူခြင်း
         const toList = Array.isArray(message.to) ? message.to : [message.to];
         
         if (toList.length > 0 && toList[0] && toList[0].address) {
             toEmail = toList[0].address;
         }
 
-        // 2. Delivered-To Header ကို fallback လုပ်ခြင်း
+        // Delivered-To Header ကို fallback လုပ်ခြင်း
         if (!toEmail) {
             const deliveredToHeader = message.headers.get('Delivered-To');
             if (deliveredToHeader) {
@@ -125,11 +124,10 @@ export default {
             }
         }
         
-        // 3. Original-To Header ကို fallback လုပ်ခြင်း
+        // Original-To Header ကို fallback လုပ်ခြင်း
         if (!toEmail) {
             const originalToHeader = message.headers.get('Original-To');
             if (originalToHeader) {
-                // Address များကို ထပ်မံ စစ်ဆေးရန်လိုအပ်ပါက ဤနေရာတွင် logic ထပ်ထည့်နိုင်သည်
                 toEmail = originalToHeader.trim(); 
             }
         }
@@ -141,7 +139,7 @@ export default {
 
         const fromDisplay = message.from; 
 
-        // 4. Email address မှ username ကို ခိုင်မာစွာ ခွဲထုတ်ခြင်း
+        // Email address မှ username ကို ခိုင်မာစွာ ခွဲထုတ်ခြင်း
         const usernameMatch = toEmail.match(/^([^@]+)@/);
 
         let username: string;
@@ -152,7 +150,7 @@ export default {
             return message.setReject(`Invalid destination format or username not found in ${toEmail}.`); 
         }
 
-        // 5. KV မှ chat ID ကို ပြန်ရှာပါ
+        // KV မှ chat ID ကို ပြန်ရှာပါ
         const chatIdString = await env.MAIL_KV.get(username); 
         
         if (chatIdString) {
