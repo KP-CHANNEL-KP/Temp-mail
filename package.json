@@ -1,0 +1,18 @@
+{
+  "name": "telegram-tempmail-worker",
+  "version": "1.0.0",
+  "description": "Telegram Temp Mail Bot hosted on Cloudflare Workers",
+  "main": "worker.ts",
+  "scripts": {
+    "deploy": "npx wrangler deploy",
+    "start": "npx wrangler dev"
+  },
+  "dependencies": {
+    "itty-router": "^2.6.6"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240403.0",
+    "typescript": "^5.4.5",
+    "wrangler": "^3.47.0"
+  }
+}
