@@ -1,4 +1,4 @@
-// worker.ts (Finalized Email Handler Logic)
+// worker.ts
 
 // 1. Configuration (Cloudflare Worker Variables တွင် ထည့်ရမည့် တန်ဖိုးများ)
 interface Env {
@@ -25,7 +25,7 @@ async function sendTelegramMessage(env: Env, chatId: number, text: string) {
   if (!response.ok) {
     const errorBody = await response.text();
     console.error('Telegram API Error:', response.status, errorBody);
-    // throw လုပ်လိုက်ခြင်းက email handler ကို catch block ထဲရောက်စေပြီး reject လုပ်စေမှာပါ။
+    // API Call Fail ဖြစ်တာကို ပြသဖို့ Error throw လုပ်ပါ
     throw new Error(`Telegram failed with status ${response.status}: ${errorBody.substring(0, 100)}`);
   }
   return response.json();
@@ -43,7 +43,7 @@ async function setWebhook(env: Env, request: Request) {
   return new Response(`Webhook Status: ${result.description}`, { status: result.ok ? 200 : 500 });
 }
 
-// 4. Temp Mail ဖန်တီးခြင်း ( unchanged )
+// 4. Temp Mail ဖန်တီးခြင်း
 async function generateTempMail(chatId: number, env: Env) {
   const randomUser = Math.random().toString(36).substring(2, 10);
   const emailAddress = `${randomUser}@${TEMP_MAIL_DOMAIN}`;
@@ -59,41 +59,55 @@ import { Router } from 'itty-router';
 
 const router = Router();
 
-// 6. Incoming Telegram Message ကို စီမံခြင်း ( unchanged )
+// 6. Incoming Telegram Message ကို စီမံခြင်း (Webhook Error ကို ဖြေရှင်းရန် try/catch ထည့်သွင်း)
 async function handleTelegramWebhook(env: Env, request: Request) {
+  // Webhook မှန်/မမှန် လုံခြုံရေး စစ်ဆေးခြင်း
   const secret = request.headers.get('X-Telegram-Bot-Api-Secret-Token');
   if (secret !== env.WEBHOOK_SECRET) {
     return new Response('Unauthorized', { status: 401 });
   }
 
-  const update = await request.json() as any;
+  try {
+    const update = await request.json() as any;
 
-  if (update.message) {
-    const message = update.message;
-    const chatId = message.chat.id;
-    const text = message.text;
+    if (update.message) {
+      const message = update.message;
+      const chatId = message.chat.id;
+      const text = message.text;
+  
+      if (!text) {
+          return new Response('OK'); 
+      }
+      
+      const command = text.toLowerCase().trim();
 
-    if (!text) {
-        return new Response('OK'); 
+      if (command === '/start') {
+        await sendTelegramMessage(env, chatId, "👋 မင်္ဂလာပါ၊ Temp Mail Bot မှကြိုဆိုပါတယ်။ အီးမေးလ်အသစ်တစ်ခု ဖန်တီးဖို့ /generate ကို နှိပ်ပါ။");
+      } else if (command === '/generate') {
+        await generateTempMail(chatId, env);
+      } else if (command === '/check') {
+          await sendTelegramMessage(env, chatId, "⚠️ Email Routing ကို အသုံးပြုနေသောကြောင့် /check command သည် အလုပ်မလုပ်ပါ။ အီးမေးလ်ဝင်လာပါက အလိုအလျောက် အသိပေးပါမည်။");
+      } else {
+        await sendTelegramMessage(env, chatId, "🤔 နားမလည်ပါဘူး။ /start, /generate များကိုသာ လက်ခံပါသည်။");
+      }
     }
+  
+    // Telegram API Call Fail ဖြစ်သည်ဖြစ်စေ၊ အောင်မြင်သည်ဖြစ်စေ 200 OK ပြန်ပို့ရန်
+    return new Response('OK');
     
-    const command = text.toLowerCase().trim();
-
-    if (command === '/start') {
-      await sendTelegramMessage(env, chatId, "👋 မင်္ဂလာပါ၊ Temp Mail Bot မှကြိုဆိုပါတယ်။ အီးမေးလ်အသစ်တစ်ခု ဖန်တီးဖို့ /generate ကို နှိပ်ပါ။");
-    } else if (command === '/generate') {
-      await generateTempMail(chatId, env);
-    } else if (command === '/check') {
-        await sendTelegramMessage(env, chatId, "⚠️ Email Routing ကို အသုံးပြုနေသောကြောင့် /check command သည် အလုပ်မလုပ်ပါ။ အီးမေးလ်ဝင်လာပါက အလိုအလျောက် အသိပေးပါမည်။");
-    } else {
-      await sendTelegramMessage(env, chatId, "🤔 နားမလည်ပါဘူး။ /start, /generate များကိုသာ လက်ခံပါသည်။");
-    }
+  } catch (e) {
+    // JSON Parse Error, Telegram API Error ဘာပဲဖြစ်ဖြစ် Worker က Crash မဖြစ်ဘဲ OK ပြန်ပို့ရန်
+    console.error('Webhook Handler Error:', e instanceof Error ? e.message : String(e));
+    return new Response('OK'); 
   }
-
-  return new Response('OK');
 }
 
-// 7. Worker ရဲ့ Entry Point နှင့် Email Handler အသစ် (ပြင်ဆင်ပြီး)
+// 7. Worker ရဲ့ Entry Point နှင့် Email Handler အသစ် (Email Address ခွဲထုတ်မှုကို ပိုမို ခိုင်မာစေရန်)
+router
+  .post('/webhook', (request, env) => handleTelegramWebhook(env as Env, request))
+  .get('/registerWebhook', (request, env) => setWebhook(env as Env, request))
+  .all('*', () => new Response('Not Found', { status: 404 }));
+
 export default {
   fetch: router.handle,
 
@@ -101,15 +115,13 @@ export default {
     try {
         const toEmail = message.to.address; 
         
-        // 🚨 ပြဿနာ အမှတ် (၁) ကို ဖြေရှင်းရန် Code: Email address ကို ပိုမို ခိုင်မာစွာ ခွဲထုတ်ခြင်း
+        // Email address ကို ပိုမို ခိုင်မာစွာ ခွဲထုတ်ခြင်း (ဥပမာ: "User Name <username@domain.com>" ကနေ username ကို ဆွဲထုတ်)
         let username;
-        // toEmail က ဥပမာ: "User Name <username@domain.com>" သို့မဟုတ် "username@domain.com" ဖြစ်နိုင်
         const emailMatch = toEmail.match(/<?([^@]+)@/);
 
         if (emailMatch && emailMatch[1]) {
             username = emailMatch[1];
         } else {
-            // Email address ပုံစံ မှားယွင်းပါက Reject လုပ်ပါ
             console.error('Email Handler FATAL Error: Cannot extract username from:', toEmail);
             return message.setReject('Invalid destination email address format.'); 
         }
@@ -128,9 +140,8 @@ export default {
             // sendTelegramMessage သည် chatId ကို number လိုချင်သောကြောင့် parseInt ဖြင့် ပြောင်းပေးသည်
             await sendTelegramMessage(env, parseInt(chatId), notification);
             
-            // Email ကို လက်ခံပြီး Worker လုပ်ငန်းပြီးဆုံးကြောင်း ပြသရန်
             console.log(`Email successfully forwarded to Telegram Chat ID: ${chatId} for user: ${username}`);
-            // Reject မလုပ်ဘဲ ပြီးဆုံးပါစေ
+            // Email ကို လက်ခံပြီး ပြီးဆုံးပါစေ။
         } else {
             // သက်တမ်းကုန်သွားသော Email ဖြစ်ပါက Reject လုပ်ပါ။
             console.log(`Rejecting expired email for user: ${username}`);
@@ -138,7 +149,7 @@ export default {
         }
 
     } catch (e) {
-        // Telegram ကို စာပို့ရာမှာ Error ဖြစ်ပါက Email ကို Reject လုပ်ပါ
+        // Telegram API ကို ခေါ်ရာမှာ Error ဖြစ်နေရင်၊ Email ကို Reject လုပ်ပါ
         const errorMessage = e instanceof Error ? e.message : 'Unknown error';
         console.error('Email Handler FATAL Error:', errorMessage);
         message.setReject('Bot processing error..'); 
