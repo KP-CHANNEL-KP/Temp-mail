@@ -7,22 +7,6 @@ interface Env {
   MAIL_KV: KVNamespace; // Cloudflare KV Namespace Binding (Key-Value Data Store)
 }
 
-// 2. Telegram Bot API Call
-async function sendTelegramMessage(env: Env, chatId: number, text: string) {
-  const url = `https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`;
-  
-  await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: text,
-      parse_mode: 'Markdown',
-    }),
-  });
-}
 
 // 3. Webhook Register Function (Worker URL/registerWebhook သို့ POST လုပ်ပါ)
 async function setWebhook(env: Env, request: Request) {
@@ -37,7 +21,7 @@ async function setWebhook(env: Env, request: Request) {
 }
 
 // 4. Temp Mail API ကို ခေါ်ဆိုခြင်း (1secmail ကို ဥပမာပြထား)
-const TEMP_MAIL_DOMAIN = "1secmail.com";
+const TEMP_MAIL_DOMAIN = "kp.kponly.ggff.net";
 
 async function generateTempMail(chatId: number, env: Env) {
   // 1secmail မှာ email ကို random username နဲ့ ဖန်တီးပေးပြီး KV မှာ သိမ်းမယ်
