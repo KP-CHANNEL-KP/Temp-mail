@@ -1,19 +1,19 @@
-// worker.ts (Final Clean Code: router, Webhook, and Email Handler Fixes ပါဝင်သည်)
+// worker.ts (Final Structural Fix: router နေရာချထားမှုကို ပြင်ဆင်ပြီး)
+
+// 🚨 router ကို အပေါ်ဆုံးမှာ စနစ်တကျ import လုပ်ရန်
+import { Router } from 'itty-router';
 
 // 1. Configuration (Cloudflare Worker Variables တွင် ထည့်ရမည့် တန်ဖိုးများ)
 interface Env {
   BOT_TOKEN: string; 
   WEBHOOK_SECRET: string; 
-  MAIL_KV: KVNamespace; // KV Binding Name ကို bot10temp Worker မှာ MAIL_KV လို့ ထားပေးပါ
+  MAIL_KV: KVNamespace; 
 }
-const TEMP_MAIL_DOMAIN = "kponly.ggff.net"; // သင့် Domain နာမည်ကို မှန်ကန်စွာ ထားပေးပါ
+const TEMP_MAIL_DOMAIN = "kponly.ggff.net";
 const TELEGRAM_API = (token: string) => `https://api.telegram.org/bot${token}`;
 
-// 🚨 Syntax Error ဖြေရှင်းရန်: itty-router ကို ဤနေရာတွင် စတင်ထည့်သွင်းခြင်း
-import { Router } from 'itty-router';
-const router = Router(); // 👈 router ကို ဒီနေရာမှာ စတင် သတ်မှတ်ပါ
-
 // 2. Telegram API Message ပို့ခြင်း
+// ... (sendTelegramMessage function body is the same)
 async function sendTelegramMessage(env: Env, chatId: number, text: string): Promise<void> {
   const url = `${TELEGRAM_API(env.BOT_TOKEN)}/sendMessage`;
   const response = await fetch(url, {
@@ -32,6 +32,7 @@ async function sendTelegramMessage(env: Env, chatId: number, text: string): Prom
 }
 
 // 3. Webhook Register Function
+// ... (setWebhook function body is the same)
 async function setWebhook(env: Env, request: Request): Promise<Response> {
   const url = `${TELEGRAM_API(env.BOT_TOKEN)}/setWebhook`;
   const webhookUrl = new URL(request.url);
@@ -51,6 +52,7 @@ async function setWebhook(env: Env, request: Request): Promise<Response> {
 }
 
 // 4. Temp Mail ဖန်တီးခြင်း
+// ... (generateTempMail function body is the same)
 async function generateTempMail(env: Env, chatId: number): Promise<string> {
   const length = 8;
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -63,6 +65,7 @@ async function generateTempMail(env: Env, chatId: number): Promise<string> {
 }
 
 // 5. Incoming Telegram Message ကို စီမံခြင်း
+// ... (handleTelegramWebhook function body is the same)
 async function handleTelegramWebhook(env: Env, request: Request): Promise<Response> {
   const secret = request.headers.get('X-Telegram-Bot-Api-Secret-Token');
   if (secret !== env.WEBHOOK_SECRET) {
@@ -98,6 +101,8 @@ async function handleTelegramWebhook(env: Env, request: Request): Promise<Respon
 
 
 // 6. Worker ရဲ့ Entry Point နှင့် Email Handler
+const router = Router(); // 👈 ဤနေရာတွင် router ကို သတ်မှတ်ပါ
+
 router
   .post('/webhook', (request, env) => handleTelegramWebhook(env as Env, request))
   .get('/registerWebhook', (request, env) => setWebhook(env as Env, request))
