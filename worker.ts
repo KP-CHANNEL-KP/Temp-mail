@@ -1,9 +1,10 @@
-// worker.ts (Final Working Code - const Functions နှင့် Email Fixes)
+// worker.ts (Final Working Code - All Fixes Included)
 
+// 🚨 1. Imports and Router Initialization
 import { Router } from 'itty-router';
 const router = Router(); 
 
-// 1. Configuration 
+// 2. Configuration 
 interface Env {
   BOT_TOKEN: string; 
   WEBHOOK_SECRET: string; 
@@ -12,7 +13,7 @@ interface Env {
 const TEMP_MAIL_DOMAIN = "kponly.ggff.net";
 const TELEGRAM_API = (token: string) => `https://api.telegram.org/bot${token}`;
 
-// 2. Function Definitions (const ဖြင့် သတ်မှတ်ပါ)
+// 3. Function Definitions (const ဖြင့် သတ်မှတ်ပါ)
 
 const sendTelegramMessage = async (env: Env, chatId: number, text: string): Promise<void> => {
   const url = `${TELEGRAM_API(env.BOT_TOKEN)}/sendMessage`;
@@ -56,7 +57,8 @@ const generateTempMail = async (env: Env, chatId: number): Promise<string> => {
   for (let i = 0; i < length; i++) {
     username += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  await env.MAIL_KV.put(username, chatId.toString(), { expirationTtl: 3600 });
+  // ယာယီအီးမေးလ် သက်တမ်းကို ၃၆၀၀ စက္ကန့် (၁ နာရီ) သတ်မှတ်
+  await env.MAIL_KV.put(username, chatId.toString(), { expirationTtl: 3600 }); 
   return `${username}@${TEMP_MAIL_DOMAIN}`;
 };
 
@@ -93,45 +95,39 @@ const handleTelegramWebhook = async (env: Env, request: Request): Promise<Respon
   }
 };
 
-// 3. Router Binding
+
+// 4. Router Binding
 router
   .post('/webhook', (request, env) => handleTelegramWebhook(env as Env, request))
   .get('/registerWebhook', (request, env) => setWebhook(env as Env, request))
   .all('*', () => new Response('Not Found', { status: 404 }));
 
-// 4. Export Default
+// 5. Export Default (Entry Points)
 export default {
   fetch: router.handle,
 
   async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
     try {
-        // Email Address ရယူသော Fallback Logic (message.to ကို array အဖြစ် စီမံခြင်း)
-        
         let toEmail: string | null = null;
         
-        // message.to ကို array အဖြစ် အမြဲတမ်း ပြောင်းလဲ၍ address ကို ရယူခြင်း
-        const toList = Array.isArray(message.to) ? message.to : [message.to];
-        
-        if (toList.length > 0 && toList[0] && toList[0].address) {
-            toEmail = toList[0].address;
+        // 1. message.destination ကို ဦးစားပေး စစ်ဆေးခြင်း (Final Fix)
+        if (message.destination) {
+            toEmail = message.destination;
         }
 
-        // Delivered-To Header ကို fallback လုပ်ခြင်း
+        // 2. Fallback: message.to ကို အသုံးပြု၍ စစ်ဆေးခြင်း
         if (!toEmail) {
-            const deliveredToHeader = message.headers.get('Delivered-To');
-            if (deliveredToHeader) {
-                toEmail = deliveredToHeader.trim();
+            // message.to ကို array အဖြစ် အမြဲတမ်း ပြောင်းလဲ၍ address ကို ရယူခြင်း
+            // message.to သည် object သို့မဟုတ် array ဖြစ်နိုင်သည်
+            const toList = Array.isArray(message.to) ? message.to : [message.to];
+            
+            // ပထမဆုံး to object ရဲ့ address ကို ထုတ်ယူပါ
+            if (toList.length > 0 && toList[0] && toList[0].address) {
+                toEmail = toList[0].address;
             }
         }
         
-        // Original-To Header ကို fallback လုပ်ခြင်း
-        if (!toEmail) {
-            const originalToHeader = message.headers.get('Original-To');
-            if (originalToHeader) {
-                toEmail = originalToHeader.trim(); 
-            }
-        }
-        
+        // 3. To Address မရရှိသေးပါက Reject လုပ်ပါ
         if (!toEmail) {
              console.error('Email Handler FATAL Error: Cannot determine valid To address after all attempts.');
              return message.setReject('Invalid destination email address received. (Final Address Cannot Be Resolved)'); 
@@ -139,7 +135,7 @@ export default {
 
         const fromDisplay = message.from; 
 
-        // Email address မှ username ကို ခိုင်မာစွာ ခွဲထုတ်ခြင်း
+        // 4. Email address မှ username ကို ခိုင်မာစွာ ခွဲထုတ်ခြင်း
         const usernameMatch = toEmail.match(/^([^@]+)@/);
 
         let username: string;
@@ -150,7 +146,7 @@ export default {
             return message.setReject(`Invalid destination format or username not found in ${toEmail}.`); 
         }
 
-        // KV မှ chat ID ကို ပြန်ရှာပါ
+        // 5. KV မှ chat ID ကို ပြန်ရှာပါ
         const chatIdString = await env.MAIL_KV.get(username); 
         
         if (chatIdString) {
