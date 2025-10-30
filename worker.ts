@@ -112,3 +112,70 @@ export default {
         let toEmail: string | null = null;
         
         // 1. message.destination ကို ဦးစားပေး စစ်ဆေးခြင်း
+        if (message.destination) {
+            toEmail = message.destination;
+        }
+
+        // 2. Fallback: message.to ကို အသုံးပြု၍ စစ်ဆေးခြင်း
+        if (!toEmail) {
+            // ForwardableEmailMessageInfo[] သို့ Type Assertion လုပ်ပြီး to address ကို ထုတ်ယူပါ
+            const toList = message.to as unknown as Array<{ address: string, name: string }>;
+            
+            if (Array.isArray(toList) && toList.length > 0 && toList[0] && toList[0].address) {
+                // array ၏ ပထမဆုံး အရာမှ address ကို ယူပါ
+                toEmail = toList[0].address;
+            } else if (toList && (toList as any).address) {
+                // array မဟုတ်ဘဲ object တစ်ခုတည်း ဖြစ်နေခဲ့ပါက address ကို ယူပါ
+                toEmail = (toList as any).address;
+            }
+        }
+        
+        // 3. To Address မရရှိသေးပါက Reject လုပ်ပါ (Final Rejection)
+        if (!toEmail) {
+             console.error('Email Handler FATAL Error: Cannot determine valid To address after all attempts.');
+             return message.setReject('Invalid destination email address received. (Final Address Cannot Be Resolved)'); 
+        }
+
+        const fromDisplay = message.from; 
+
+        // 4. Email address မှ username ကို ခိုင်မာစွာ ခွဲထုတ်ခြင်း
+        const usernameMatch = toEmail.match(/^([^@]+)@/);
+
+        let username: string;
+        if (usernameMatch && usernameMatch[1]) {
+            username = usernameMatch[1];
+        } else {
+            console.error('Email Handler FATAL Error: Cannot extract username from:', toEmail);
+            return message.setReject(`Invalid destination format or username not found in ${toEmail}.`); 
+        }
+
+        // 5. KV မှ chat ID ကို ပြန်ရှာပါ
+        const chatIdString = await env.MAIL_KV.get(username); 
+        
+        if (chatIdString) {
+            const chatIdNumber = parseInt(chatIdString); 
+            const subject = message.subject || "(No Subject)";
+            const bodyText = message.text || "(Email Body is empty)";
+
+            const notification = `📧 **Email အသစ် ဝင်လာပြီ**\n\n` + 
+                                 `*To:* \`${toEmail}\`\n` +
+                                 `*From:* ${fromDisplay || 'Unknown Sender'}\n` + 
+                                 `*Subject:* ${subject.substring(0, 100)}\n\n` +
+                                 `*ကိုယ်ထည်အကျဉ်း:* ${bodyText.substring(0, 300)}...`; 
+
+            await sendTelegramMessage(env, chatIdNumber, notification);
+            
+            console.log(`Email successfully forwarded to Telegram Chat ID: ${chatIdNumber} for user: ${username}`);
+        } else {
+            console.log(`Rejecting expired email for user: ${username}`);
+            message.setReject('This temporary email address has expired or is invalid.');
+        }
+
+
+    } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+        console.error('Email Handler FATAL Error in try block:', errorMessage);
+        message.setReject(`Bot processing error: ${errorMessage.substring(0, 50)}...`); 
+    }
+  }
+};
