@@ -10,7 +10,7 @@ interface Env {
   WEBHOOK_SECRET: string; 
   MAIL_KV: KVNamespace; 
 }
-const TEMP_MAIL_DOMAIN = "kpchannel.kponly.ggff.net"; 
+const TEMP_MAIL_DOMAIN = "kponly.ggff.net"; 
 const TELEGRAM_API = (token: string) => `https://api.telegram.org/bot${token}`;
 
 // 3. Function Definitions 
