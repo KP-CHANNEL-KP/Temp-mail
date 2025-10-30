@@ -85,3 +85,48 @@ async function checkMail(chatId: number, env: Env) {
 }
 
 // ... Router Code (အောက်မှာ ဆက်ပါမယ်)
+import { Router } from 'itty-router';
+
+const router = Router();
+
+// 6. Incoming Telegram Message ကို စီမံခြင်း
+async function handleTelegramWebhook(env: Env, request: Request) {
+  const secret = request.headers.get('X-Telegram-Bot-Api-Secret-Token');
+  if (secret !== env.WEBHOOK_SECRET) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  const update = await request.json() as any;
+
+  if (update.message) {
+    const message = update.message;
+    const chatId = message.chat.id;
+    const text = message.text;
+
+    if (!text) {
+        return new Response('OK'); // Sticker/Photo ကို ကျော်
+    }
+    
+    if (text === '/start') {
+      await sendTelegramMessage(env, chatId, "👋 မင်္ဂလာပါ၊ Temp Mail Bot မှကြိုဆိုပါတယ်။ အီးမေးလ်အသစ်တစ်ခု ဖန်တီးဖို့ /generate ကို နှိပ်ပါ။");
+    } else if (text === '/generate') {
+      await generateTempMail(chatId, env);
+    } else if (text === '/check') {
+      await checkMail(chatId, env);
+    } else {
+      await sendTelegramMessage(env, chatId, "🤔 နားမလည်ပါဘူး။ /start, /generate, /check များကိုသာ လက်ခံပါသည်။");
+    }
+  }
+
+  return new Response('OK');
+}
+
+// 7. Worker ရဲ့ Entry Point
+router
+  .post('/webhook', (request, env) => handleTelegramWebhook(env as Env, request))
+  .get('/registerWebhook', (request, env) => setWebhook(env as Env, request))
+  .all('*', () => new Response('Not Found', { status: 404 }));
+
+export default {
+  fetch: router.handle,
+};
