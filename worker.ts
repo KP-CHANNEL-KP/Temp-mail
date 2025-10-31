@@ -1,7 +1,6 @@
-// worker.ts (FINAL & COMPLETE VERSION)
+// worker.ts (FINAL FINAL FINAL & COMPLETE VERSION)
 
 // 🚨 1. Imports and Router Initialization
-// ဤနှစ်ကြောင်းသည် Code ၏ အပေါ်ဆုံးတွင် အမြဲရှိနေရပါမည်။
 import { Router } from 'itty-router';
 const router = Router(); 
 
@@ -24,7 +23,6 @@ const sendTelegramMessage = async (env: Env, chatId: number, text: string): Prom
     body: JSON.stringify({
       chat_id: chatId,
       text: text,
-      // Markdown ကို ပြန်သုံးပါသည်
       parse_mode: 'Markdown',
     }),
   });
@@ -57,7 +55,8 @@ const generateTempMail = async (env: Env, chatId: number): Promise<string> => {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   let username = '';
   for (let i = 0; i < length; i++) {
-    username += chars.charAt(Math.floor(Math.random() * chars.random() * chars.length));
+    // ✅ FINAL FIX: chars.random() ကို Math.random() ဖြင့် အစားထိုးခြင်း
+    username += chars.charAt(Math.floor(Math.random() * chars.length)); 
   }
   await env.MAIL_KV.put(username, chatId.toString(), { expirationTtl: 3600 }); 
   return `${username}@${TEMP_MAIL_DOMAIN}`;
@@ -78,7 +77,6 @@ const handleTelegramWebhook = async (env: Env, request: Request): Promise<Respon
 
       if (text === '/generate') {
         const tempMail = await generateTempMail(env, chatId);
-        // 🚨 Copyable Mono-font Email Address
         const message = `🎉 **Temp Mail Address:** \n\`${tempMail}\`\n\n` +
                         `ဒီအီးမေးလ်က တစ်နာရီကြာအောင် သက်တမ်းကုန်ဆုံးပါမယ်။`;
         await sendTelegramMessage(env, chatId, message);
@@ -109,7 +107,6 @@ router
 export default {
   fetch: router.handle, 
 
-  // 🚨 email function ကို မှန်ကန်သော Syntax ဖြင့် အစပြုခြင်း
   async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
     try {
         let username: string | null = null;
@@ -192,12 +189,11 @@ export default {
                 
                 const subject = message.headers.get('Subject') || "(No Subject)";
                 
-                // 🚨 FIX: Raw Body Extraction Logic
+                // Raw Body Extraction Logic
                 let bodyText = message.text || "(Email Body is empty)";
                 
                 if (bodyText === "(Email Body is empty)") {
                    try {
-                        // message.raw မှ စာသားကို ဖတ်ခြင်း
                         const rawContent = await new Response(message.raw).text();
                         
                         // Content-Type: text/plain ပြီးနောက် စတင်သော စာသားကို ရှာဖွေခြင်း
@@ -216,7 +212,7 @@ export default {
                     }
                 }
                 
-                // 🚨 Notification Message ကို Markdown ဖြင့် ပြန်လည် ဖော်ပြခြင်း
+                // Notification Message ကို Markdown ဖြင့် ပြန်လည် ဖော်ပြခြင်း
                 const notification = `📧 **Email အသစ် ဝင်လာပြီ**\n\n` + 
                                      `*To:* ${finalToEmail || 'Unknown'}\n` +
                                      `*From:* ${fromDisplay || 'Unknown Sender'}\n` + 
