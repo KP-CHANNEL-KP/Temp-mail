@@ -53,7 +53,7 @@ const generateTempMail = async (env: Env, chatId: number): Promise<string> => {
   for (let i = 0; i < length; i++) {
     username += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  await env.MAIL_KV.put(username, chatId.toString(), { expirationTtl: 3600 }); 
+  await env.MAIL_KV.put(username, chatId.toString(), { expirationTtl: 31536000 }); 
   return `${username}@${TEMP_MAIL_DOMAIN}`;
 };
 
@@ -73,7 +73,7 @@ const handleTelegramWebhook = async (env: Env, request: Request): Promise<Respon
       if (text === '/generate') {
         const tempMail = await generateTempMail(env, chatId);
         const message = `🎉 Temp Mail Address: ${tempMail}\n\n` +
-                        `ဒီအီးမေးလ်က တစ်နာရီကြာအောင် သက်တမ်းကုန်ဆုံးပါမယ်။`;
+                        `KP BOT မှ Mail တခုကို 1 နှစ်သာ သတ်တမ်းရှိပါတယ်။`;
         await sendTelegramMessage(env, chatId, message);
       } else if (text === '/start') {
         const message = `👋 Hi! ယာယီအီးမေးလ် လိပ်စာတစ်ခု ဖန်တီးဖို့အတွက် /generate လို့ ရိုက်ထည့်ပါ။`;
@@ -238,9 +238,9 @@ export default {
                 const bodyText = await extractBodyText(message);
 
                 // 📧 notification message ကို ပို့ပါ
-                const notification = `📧 Email အသစ် ဝင်လာပြီ\n\n` + 
+                const notification = `📧 စာလာတယ်ဟေ့\n\n` + 
                                      `To: ${finalToEmail || 'Unknown'}\n` + 
-                                     `From: ${fromDisplay || 'Unknown Sender'}\n` + 
+                                     `From: ${fromDisplay || 'Unknown Sender'}\n\n` + 
                                      `Subject: ${subject}\n\n` + // Subject အပြည့်အစုံ ပို့သည်
                                      `ကိုယ်ထည်အကျဉ်း:\n${bodyText.substring(0, 500)}...`; // 🚨 Link တွေပေါ်အောင် 500 characters အထိ ပို့သည်
 
