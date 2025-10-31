@@ -1,4 +1,103 @@
-// ... (All Function Definitions: sendTelegramMessage, setWebhook, generateTempMail, handleTelegramWebhook are the same)
+// worker.ts (FINAL & COMPLETE VERSION)
+
+// 🚨 1. Imports and Router Initialization
+// ဤနှစ်ကြောင်းသည် Code ၏ အပေါ်ဆုံးတွင် အမြဲရှိနေရပါမည်။
+import { Router } from 'itty-router';
+const router = Router(); 
+
+// 2. Configuration 
+interface Env {
+  BOT_TOKEN: string; 
+  WEBHOOK_SECRET: string; 
+  MAIL_KV: KVNamespace; 
+}
+const TEMP_MAIL_DOMAIN = "kponly.ggff.net"; 
+const TELEGRAM_API = (token: string) => `https://api.telegram.org/bot${token}`;
+
+// 3. Function Definitions 
+
+const sendTelegramMessage = async (env: Env, chatId: number, text: string): Promise<void> => {
+  const url = `${TELEGRAM_API(env.BOT_TOKEN)}/sendMessage`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: text,
+      // Markdown ကို ပြန်သုံးပါသည်
+      parse_mode: 'Markdown',
+    }),
+  });
+
+  if (!response.ok) {
+    console.error(`Failed to send Telegram message: ${response.status} ${response.statusText}`);
+  }
+};
+
+const setWebhook = async (env: Env, request: Request): Promise<Response> => {
+  const url = `${TELEGRAM_API(env.BOT_TOKEN)}/setWebhook`;
+  const webhookUrl = new URL(request.url);
+  webhookUrl.pathname = '/webhook';
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      url: webhookUrl.toString(),
+      allowed_updates: ["message"],
+      secret_token: env.WEBHOOK_SECRET
+    }),
+  });
+
+  return new Response(response.ok ? 'Webhook set successfully' : 'Failed to set webhook', { status: response.status });
+};
+
+const generateTempMail = async (env: Env, chatId: number): Promise<string> => {
+  const length = 8;
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let username = '';
+  for (let i = 0; i < length; i++) {
+    username += chars.charAt(Math.floor(Math.random() * chars.random() * chars.length));
+  }
+  await env.MAIL_KV.put(username, chatId.toString(), { expirationTtl: 3600 }); 
+  return `${username}@${TEMP_MAIL_DOMAIN}`;
+};
+
+const handleTelegramWebhook = async (env: Env, request: Request): Promise<Response> => {
+  const secret = request.headers.get('X-Telegram-Bot-Api-Secret-Token');
+  if (secret !== env.WEBHOOK_SECRET) {
+    return new Response('Unauthorized', { status: 403 });
+  }
+
+  try {
+    const update = await request.json() as any;
+
+    if (update.message && update.message.text) {
+      const chatId = update.message.chat.id;
+      const text = update.message.text.trim();
+
+      if (text === '/generate') {
+        const tempMail = await generateTempMail(env, chatId);
+        // 🚨 Copyable Mono-font Email Address
+        const message = `🎉 **Temp Mail Address:** \n\`${tempMail}\`\n\n` +
+                        `ဒီအီးမေးလ်က တစ်နာရီကြာအောင် သက်တမ်းကုန်ဆုံးပါမယ်။`;
+        await sendTelegramMessage(env, chatId, message);
+      } else if (text === '/start') {
+        const message = `👋 Hi! ယာယီအီးမေးလ် လိပ်စာတစ်ခု ဖန်တီးဖို့အတွက် /generate လို့ ရိုက်ထည့်ပါ။`;
+        await sendTelegramMessage(env, chatId, message);
+      }
+      return new Response('OK', { status: 200 }); 
+    }
+    
+    return new Response('OK', { status: 200 }); 
+
+  } catch (e) {
+    const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+    console.error('Webhook Handler Error:', errorMessage);
+    return new Response('OK (Error handled)', { status: 200 }); 
+  }
+};
+
 
 // 4. Router Binding (HTTP Request Entry Point)
 router
@@ -7,10 +106,10 @@ router
   .all('*', () => new Response('Not Found', { status: 404 }));
 
 // 5. Export Default (Entry Points)
-// 🚨 FIX: email function ကို Object property syntax ဖြင့် ပြန်လည်ရေးသားခြင်း
 export default {
   fetch: router.handle, 
 
+  // 🚨 email function ကို မှန်ကန်သော Syntax ဖြင့် အစပြုခြင်း
   async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
     try {
         let username: string | null = null;
@@ -38,7 +137,7 @@ export default {
             return null;
         };
         
-        // 1. Check all possible standard and forwarded headers (Logic is the same)
+        // 1. Check all possible standard and forwarded headers
         const headerNames = [
             'to', 'cc', 'bcc', 'delivered-to', 
             'x-forwarded-to', 'x-original-to', 'original-recipient', 'envelope-to'
@@ -53,7 +152,7 @@ export default {
             }
         }
         
-        // 2 & 3. Fallbacks (Logic is the same)
+        // 2 & 3. Fallbacks
         if (!finalToEmail && message.destination && message.destination.endsWith(DOMAIN_PATTERN)) {
             finalToEmail = message.destination;
         }
@@ -63,7 +162,7 @@ export default {
             finalToEmail = messageWithRcptTo.rcptTo;
         }
         
-        // 4. Final Check and Username Extraction (Logic is the same)
+        // 4. Final Check and Username Extraction
         if (finalToEmail) {
             if (finalToEmail === `bot10temp@${TEMP_MAIL_DOMAIN}`) {
                  return; 
@@ -93,15 +192,20 @@ export default {
                 
                 const subject = message.headers.get('Subject') || "(No Subject)";
                 
-                // Raw Body Extraction Logic (Logic is the same)
+                // 🚨 FIX: Raw Body Extraction Logic
                 let bodyText = message.text || "(Email Body is empty)";
                 
                 if (bodyText === "(Email Body is empty)") {
                    try {
+                        // message.raw မှ စာသားကို ဖတ်ခြင်း
                         const rawContent = await new Response(message.raw).text();
+                        
+                        // Content-Type: text/plain ပြီးနောက် စတင်သော စာသားကို ရှာဖွေခြင်း
                         const bodyMatch = rawContent.match(/Content-Type: text\/plain;[\s\S]*?\r?\n\r?\n([\s\S]*)/i);
+                        
                         if (bodyMatch && bodyMatch[1]) {
                             bodyText = bodyMatch[1].trim();
+                            // Reply Headers (On Mon, etc.) ကို ဖယ်ရှားခြင်း
                             bodyText = bodyText.split(/On\s+.*wrote:|\r?\n-{2,}\r?\n/i)[0].trim();
                         } else {
                             bodyText = "Could not parse email body from raw content.";
@@ -112,7 +216,7 @@ export default {
                     }
                 }
                 
-                // Notification Message (Logic is the same)
+                // 🚨 Notification Message ကို Markdown ဖြင့် ပြန်လည် ဖော်ပြခြင်း
                 const notification = `📧 **Email အသစ် ဝင်လာပြီ**\n\n` + 
                                      `*To:* ${finalToEmail || 'Unknown'}\n` +
                                      `*From:* ${fromDisplay || 'Unknown Sender'}\n` + 
