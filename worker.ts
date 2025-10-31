@@ -1,4 +1,4 @@
-// worker.ts (ULTIMATE FINAL CLEAN VERSION - Robust Body Extraction & Plain Text)
+// worker.ts (ULTIMATE FINAL STABLE VERSION - Forwarding Fix & Robust Body Extraction)
 
 // 🚨 1. Imports and Router Initialization
 import { Router } from 'itty-router';
@@ -10,7 +10,6 @@ interface Env {
   WEBHOOK_SECRET: string; 
   MAIL_KV: KVNamespace; 
 }
-// 🚨 Domain ကို ပြန်စစ်ပါ: "kponly.ggff.net"
 const TEMP_MAIL_DOMAIN = "kponly.ggff.net"; 
 const TELEGRAM_API = (token: string) => `https://api.telegram.org/bot${token}`;
 
@@ -24,13 +23,13 @@ const sendTelegramMessage = async (env: Env, chatId: number, text: string): Prom
     body: JSON.stringify({
       chat_id: chatId,
       text: text,
-      // 🚨 Plain Text ဖြစ်ဖို့အတွက် parse_mode ကို လုံးဝဖယ်ထားသည်
+      // Plain Text ဖြစ်ဖို့အတွက် parse_mode ကို လုံးဝဖယ်ထားသည်
     }),
   });
 
   if (!response.ok) {
     const errorBody = await response.text();
-    // Error 400 (Bad Request) တက်ရင် စာသား Format ပြဿနာရှိလို့ ဖြစ်ပြီး၊ ယခု Plain Text သုံးထားတဲ့အတွက် ဒီ Error က လုံးဝမတက်တော့ပါ
+    // 400 Bad Request error များ မဖြစ်တော့ပါ
     console.error(`Failed to send Telegram message: ${response.status} ${response.statusText}. Response: ${errorBody}`);
   }
 };
@@ -79,7 +78,7 @@ const handleTelegramWebhook = async (env: Env, request: Request): Promise<Respon
 
       if (text === '/generate') {
         const tempMail = await generateTempMail(env, chatId);
-        // 🚨 Plain Text Message (Markdown backtick ကို ဖယ်လိုက်သည်)
+        // Plain Text Message
         const message = `🎉 Temp Mail Address: ${tempMail}\n\n` +
                         `ဒီအီးမေးလ်က တစ်နာရီကြာအောင် သက်တမ်းကုန်ဆုံးပါမယ်။`;
         await sendTelegramMessage(env, chatId, message);
@@ -106,7 +105,7 @@ router
   .get('/registerWebhook', (request, env) => setWebhook(env as Env, request))
   .all('*', () => new Response('Not Found', { status: 404 }));
 
-// 5. Export Default (Entry Points)
+// 5. Export Default (Email Handler Entry Point)
 export default {
   fetch: router.handle, 
 
@@ -135,7 +134,7 @@ export default {
             return null;
         };
         
-        // Header & Fallback Logic (No change)
+        // Header & Fallback Logic (Recipient ရှာဖွေမှု)
         const headerNames = [
             'to', 'cc', 'bcc', 'delivered-to', 
             'x-forwarded-to', 'x-original-to', 'original-recipient', 'envelope-to' 
@@ -159,11 +158,34 @@ export default {
             finalToEmail = messageWithRcptTo.rcptTo;
         }
         
-        // Final Check and Username Extraction Logic (No change)
-        if (finalToEmail) {
-            if (finalToEmail === `bot10temp@${TEMP_MAIL_DOMAIN}`) {
-                 return; 
+        // 🚨 4. FINAL FIX: Gmail Forwarding Error ကို ဖြေရှင်းခြင်း
+        if (finalToEmail === `bot10temp@${TEMP_MAIL_DOMAIN}`) {
+            console.log('Detected static bot address as recipient. Searching for original dynamic address in headers/subject.');
+            
+            let originalRecipient = null;
+            const allHeaders = [...message.headers.entries()].map(([name, value]) => `${name}: ${value}`).join('\n');
+            const subject = message.headers.get('Subject') || '';
+            const searchSpace = allHeaders + '\n' + subject;
+
+            // မူရင်း temp mail pattern (အက္ခရာ ၈ လုံး + @domain) ကို စာသားထဲမှာ ရှာဖွေခြင်း
+            const match = searchSpace.match(/(\w{8}@kponly\.ggff\.net)/); 
+            
+            if (match && match[1]) {
+                originalRecipient = match[1];
+                console.log(`Found original recipient: ${originalRecipient}`);
             }
+
+            if (originalRecipient) {
+                finalToEmail = originalRecipient; 
+            } else {
+                // မူရင်း address ရှာမတွေ့ရင် ထွက်လိုက်ပါ။
+                console.error('Email Handler FATAL Error: finalToEmail is the static bot address, and cannot find original dynamic address.');
+                return; 
+            }
+        }
+        
+        // 5. Final Username Extraction
+        if (finalToEmail) {
             const usernameMatch = finalToEmail.match(/^([^@]+)@/);
 
             if (usernameMatch && usernameMatch[1]) {
@@ -179,7 +201,7 @@ export default {
 
         const fromDisplay = message.from; 
 
-        // 5. KV မှ chat ID ကို ပြန်ရှာပါ
+        // 6. KV မှ chat ID ကို ပြန်ရှာပါ
         if (username) {
             const chatIdString = await env.MAIL_KV.get(username); 
             
@@ -188,12 +210,19 @@ export default {
                 
                 const subject = message.headers.get('Subject') || "(No Subject)";
                 
-                // 🚨 FINAL BODY EXTRACTION FIX: 
-                // message.text ကို အားကိုးခြင်းဖြင့် (Email Body is empty) ကို ရှောင်ရှားရန်
-                
-                let bodyText = message.text || message.html ? "Email Body has HTML content or is empty. Please check the email source for full content." : "(Email Body is empty)";
-                
-                // 📧 notification
+                // 🚨 FINAL FIX 2: Empty Body ပြဿနာ ဖြေရှင်းခြင်း
+                let bodyText: string;
+                if (message.text) {
+                    // Plain Text ရှိရင် body ကို ယူ
+                    bodyText = message.text;
+                } else if (message.html) {
+                    // HTML ပဲရှိရင် စာကိုယ်ရှိကြောင်း အသိပေးပြီး full content ကို မဖော်ပြနိုင်ကြောင်း ပြော
+                    bodyText = "Email Body has HTML content. Cannot display full content here. Please check the email source.";
+                } else {
+                    bodyText = "(Email Body is empty)";
+                }
+
+                // 📧 notification message ကို ပို့ပါ
                 const notification = `📧 Email အသစ် ဝင်လာပြီ\n\n` + 
                                      `To: ${finalToEmail || 'Unknown'}\n` + 
                                      `From: ${fromDisplay || 'Unknown Sender'}\n` + 
