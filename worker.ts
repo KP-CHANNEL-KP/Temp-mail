@@ -1,4 +1,4 @@
-// worker.ts (ULTIMATE FINAL STABLE VERSION - Forwarding Fix & Robust Body Extraction)
+// worker.js (FINAL VERSION: Logic Split, Robust Body Extraction, and Increased Body Length for Links)
 
 // 🚨 1. Imports and Router Initialization
 import { Router } from 'itty-router';
@@ -13,11 +13,11 @@ interface Env {
 const TEMP_MAIL_DOMAIN = "kponly.ggff.net"; 
 const TELEGRAM_API = (token: string) => `https://api.telegram.org/bot${token}`;
 
-// 3. Function Definitions 
+// 3. Function Definitions (Logic များကို သီးသန့် ခွဲထုတ်ထားသည့် အပိုင်း)
 
 const sendTelegramMessage = async (env: Env, chatId: number, text: string): Promise<void> => {
   const url = `${TELEGRAM_API(env.BOT_TOKEN)}/sendMessage`;
-  const response = await fetch(url, {
+  await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -26,12 +26,6 @@ const sendTelegramMessage = async (env: Env, chatId: number, text: string): Prom
       // Plain Text ဖြစ်ဖို့အတွက် parse_mode ကို လုံးဝဖယ်ထားသည်
     }),
   });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    // 400 Bad Request error များ မဖြစ်တော့ပါ
-    console.error(`Failed to send Telegram message: ${response.status} ${response.statusText}. Response: ${errorBody}`);
-  }
 };
 
 const setWebhook = async (env: Env, request: Request): Promise<Response> => {
@@ -78,7 +72,6 @@ const handleTelegramWebhook = async (env: Env, request: Request): Promise<Respon
 
       if (text === '/generate') {
         const tempMail = await generateTempMail(env, chatId);
-        // Plain Text Message
         const message = `🎉 Temp Mail Address: ${tempMail}\n\n` +
                         `ဒီအီးမေးလ်က တစ်နာရီကြာအောင် သက်တမ်းကုန်ဆုံးပါမယ်။`;
         await sendTelegramMessage(env, chatId, message);
@@ -92,11 +85,48 @@ const handleTelegramWebhook = async (env: Env, request: Request): Promise<Respon
     return new Response('OK', { status: 200 }); 
 
   } catch (e) {
-    const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-    console.error('Webhook Handler Error:', errorMessage);
+    console.error('Webhook Handler Error:', e instanceof Error ? e.message : 'Unknown error');
     return new Response('OK (Error handled)', { status: 200 }); 
   }
 };
+
+// 🚨 HELPER FUNCTION: Email Body ကို စိတ်ချရအောင် ခွဲထုတ်သည့် Function
+const extractBodyText = async (message: ForwardableEmailMessage): Promise<string> => {
+    try {
+        if (message.text) {
+            // 1. Plain Text ရှိရင် body ကို ယူပါ
+            return message.text;
+        } 
+        
+        // 2. message.text မရှိရင် message.raw ကို ဖတ်ပြီး Plain Text Body ကို ခွဲထုတ်ပါ
+        const rawContent = await new Response(message.raw).text();
+        
+        // Content-Type: text/plain စအပိုင်းကို ရှာပြီး Body ကို ယူပါ
+        const match = rawContent.match(/Content-Type: text\/plain;[\s\S]*?\r?\n\r?\n([\s\S]*?)(?=\r?\n--)/i) || 
+                      rawContent.match(/Content-Type: text\/plain;[\s\S]*?\r?\n\r?\n([\s\S]*)/i);
+        
+        if (match && match[1]) {
+            let extractedBody = match[1].trim();
+            
+            // Email Reply တွေနဲ့ Header တွေကို ဖယ်ထုတ်ခြင်း
+            extractedBody = extractedBody.split(/On\s+.*wrote:|-----\s*Original Message\s*-----|From:\s*.*<.*>|To:\s*.*<.*>|Subject:[\s\S]*/i)[0].trim();
+            
+            // စာကြောင်းနှစ်ကြောင်းထက် ပိုတဲ့ နေရာလွတ်တွေကို လျှော့ချခြင်း
+            return extractedBody.replace(/(\r?\n){3,}/g, '\n\n'); 
+        } 
+        
+        if (message.html) {
+             // HTML သာပါပါက ဖော်ပြရန်
+             return "Email Body has HTML content. Cannot display full content here. Please check the email source.";
+        }
+        
+        return "(Email Body is empty)";
+
+    } catch (e) {
+        console.error("Error reading or parsing raw email body:", e);
+        return "(Error reading email body)";
+    }
+}
 
 
 // 4. Router Binding (HTTP Request Entry Point)
@@ -116,7 +146,7 @@ export default {
         
         const DOMAIN_PATTERN = `@${TEMP_MAIL_DOMAIN}`; 
 
-        // Helper function to extract email from headers (No change)
+        // Helper function to extract email from headers 
         const extractAddress = (headerValue: string | null): string | null => {
             if (!headerValue) return null;
             const candidates = headerValue.split(/[;,]/).map(s => s.trim());
@@ -158,27 +188,21 @@ export default {
             finalToEmail = messageWithRcptTo.rcptTo;
         }
         
-        // 🚨 4. FINAL FIX: Gmail Forwarding Error ကို ဖြေရှင်းခြင်း
+        // 🚨 Gmail Forwarding Error ကို ဖြေရှင်းခြင်း
         if (finalToEmail === `bot10temp@${TEMP_MAIL_DOMAIN}`) {
-            console.log('Detected static bot address as recipient. Searching for original dynamic address in headers/subject.');
-            
             let originalRecipient = null;
             const allHeaders = [...message.headers.entries()].map(([name, value]) => `${name}: ${value}`).join('\n');
             const subject = message.headers.get('Subject') || '';
             const searchSpace = allHeaders + '\n' + subject;
-
-            // မူရင်း temp mail pattern (အက္ခရာ ၈ လုံး + @domain) ကို စာသားထဲမှာ ရှာဖွေခြင်း
             const match = searchSpace.match(/(\w{8}@kponly\.ggff\.net)/); 
             
             if (match && match[1]) {
                 originalRecipient = match[1];
-                console.log(`Found original recipient: ${originalRecipient}`);
             }
 
             if (originalRecipient) {
                 finalToEmail = originalRecipient; 
             } else {
-                // မူရင်း address ရှာမတွေ့ရင် ထွက်လိုက်ပါ။
                 console.error('Email Handler FATAL Error: finalToEmail is the static bot address, and cannot find original dynamic address.');
                 return; 
             }
@@ -210,24 +234,15 @@ export default {
                 
                 const subject = message.headers.get('Subject') || "(No Subject)";
                 
-                // 🚨 FINAL FIX 2: Empty Body ပြဿနာ ဖြေရှင်းခြင်း
-                let bodyText: string;
-                if (message.text) {
-                    // Plain Text ရှိရင် body ကို ယူ
-                    bodyText = message.text;
-                } else if (message.html) {
-                    // HTML ပဲရှိရင် စာကိုယ်ရှိကြောင်း အသိပေးပြီး full content ကို မဖော်ပြနိုင်ကြောင်း ပြော
-                    bodyText = "Email Body has HTML content. Cannot display full content here. Please check the email source.";
-                } else {
-                    bodyText = "(Email Body is empty)";
-                }
+                // 🚨 Refactored Fix: သီးခြား Function မှ Body Text ကို ခေါ်ယူခြင်း
+                const bodyText = await extractBodyText(message);
 
                 // 📧 notification message ကို ပို့ပါ
                 const notification = `📧 Email အသစ် ဝင်လာပြီ\n\n` + 
                                      `To: ${finalToEmail || 'Unknown'}\n` + 
                                      `From: ${fromDisplay || 'Unknown Sender'}\n` + 
-                                     `Subject: ${subject.substring(0, 100)}\n\n` +
-                                     `ကိုယ်ထည်အကျဉ်း:\n${bodyText.substring(0, 300)}...`; 
+                                     `Subject: ${subject}\n\n` + // Subject အပြည့်အစုံ ပို့သည်
+                                     `ကိုယ်ထည်အကျဉ်း:\n${bodyText.substring(0, 500)}...`; // 🚨 Link တွေပေါ်အောင် 500 characters အထိ ပို့သည်
 
                 await sendTelegramMessage(env, chatIdNumber, notification);
                 
