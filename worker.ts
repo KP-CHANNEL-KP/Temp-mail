@@ -1,4 +1,4 @@
-// worker.ts (FINAL FINAL FINAL VERSION with Simplified Markdown Fix)
+// worker.ts (ULTIMATE FINAL CLEAN VERSION - Robust Body Extraction & Plain Text)
 
 // 🚨 1. Imports and Router Initialization
 import { Router } from 'itty-router';
@@ -10,16 +10,11 @@ interface Env {
   WEBHOOK_SECRET: string; 
   MAIL_KV: KVNamespace; 
 }
+// 🚨 Domain ကို ပြန်စစ်ပါ: "kponly.ggff.net"
 const TEMP_MAIL_DOMAIN = "kponly.ggff.net"; 
 const TELEGRAM_API = (token: string) => `https://api.telegram.org/bot${token}`;
 
 // 3. Function Definitions 
-
-// 🚨 ULTIMATE FIX: Markdown V2 Escape Function (Backslash ကိုပါ Escape လုပ်ခြင်း)
-const escapeMarkdownV2 = (text: string): string => {
-  // Markdown V2 တွင် Reserved Characters အားလုံးကို Escape လုပ်သည်။
-  return text.replace(/([_*[\]()~>#+=|{}.!-\\])/g, '\\$1');
-};
 
 const sendTelegramMessage = async (env: Env, chatId: number, text: string): Promise<void> => {
   const url = `${TELEGRAM_API(env.BOT_TOKEN)}/sendMessage`;
@@ -29,13 +24,13 @@ const sendTelegramMessage = async (env: Env, chatId: number, text: string): Prom
     body: JSON.stringify({
       chat_id: chatId,
       text: text,
-      // 🚨 FIX: MarkdownV2 ကို အသုံးပြုပါသည်
-      parse_mode: 'MarkdownV2', 
+      // 🚨 Plain Text ဖြစ်ဖို့အတွက် parse_mode ကို လုံးဝဖယ်ထားသည်
     }),
   });
 
   if (!response.ok) {
     const errorBody = await response.text();
+    // Error 400 (Bad Request) တက်ရင် စာသား Format ပြဿနာရှိလို့ ဖြစ်ပြီး၊ ယခု Plain Text သုံးထားတဲ့အတွက် ဒီ Error က လုံးဝမတက်တော့ပါ
     console.error(`Failed to send Telegram message: ${response.status} ${response.statusText}. Response: ${errorBody}`);
   }
 };
@@ -63,7 +58,7 @@ const generateTempMail = async (env: Env, chatId: number): Promise<string> => {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   let username = '';
   for (let i = 0; i < length; i++) {
-    username += chars.charAt(Math.floor(Math.random() * chars.length)); 
+    username += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   await env.MAIL_KV.put(username, chatId.toString(), { expirationTtl: 3600 }); 
   return `${username}@${TEMP_MAIL_DOMAIN}`;
@@ -84,13 +79,12 @@ const handleTelegramWebhook = async (env: Env, request: Request): Promise<Respon
 
       if (text === '/generate') {
         const tempMail = await generateTempMail(env, chatId);
-        // FIX: Mono Font/Copyable Email Address
-        const message = `🎉 \*Temp Mail Address:\* \n\`${tempMail}\`\n\n` +
+        // 🚨 Plain Text Message (Markdown backtick ကို ဖယ်လိုက်သည်)
+        const message = `🎉 Temp Mail Address: ${tempMail}\n\n` +
                         `ဒီအီးမေးလ်က တစ်နာရီကြာအောင် သက်တမ်းကုန်ဆုံးပါမယ်။`;
         await sendTelegramMessage(env, chatId, message);
       } else if (text === '/start') {
-        // FIX: MarkdownV2 ဖြင့် စာလုံးများကို Escape လုပ်ခြင်း
-        const message = `👋 Hi\! ယာယီအီးမေးလ် လိပ်စာတစ်ခု ဖန်တီးဖို့အတွက် /generate လို့ ရိုက်ထည့်ပါ။`;
+        const message = `👋 Hi! ယာယီအီးမေးလ် လိပ်စာတစ်ခု ဖန်တီးဖို့အတွက် /generate လို့ ရိုက်ထည့်ပါ။`;
         await sendTelegramMessage(env, chatId, message);
       }
       return new Response('OK', { status: 200 }); 
@@ -123,7 +117,7 @@ export default {
         
         const DOMAIN_PATTERN = `@${TEMP_MAIL_DOMAIN}`; 
 
-        // Helper function to extract email from potential header values (No changes)
+        // Helper function to extract email from headers (No change)
         const extractAddress = (headerValue: string | null): string | null => {
             if (!headerValue) return null;
             const candidates = headerValue.split(/[;,]/).map(s => s.trim());
@@ -141,7 +135,7 @@ export default {
             return null;
         };
         
-        // Header & Fallback Logic (No changes)
+        // Header & Fallback Logic (No change)
         const headerNames = [
             'to', 'cc', 'bcc', 'delivered-to', 
             'x-forwarded-to', 'x-original-to', 'original-recipient', 'envelope-to' 
@@ -165,7 +159,7 @@ export default {
             finalToEmail = messageWithRcptTo.rcptTo;
         }
         
-        // Final Check and Username Extraction Logic (No changes)
+        // Final Check and Username Extraction Logic (No change)
         if (finalToEmail) {
             if (finalToEmail === `bot10temp@${TEMP_MAIL_DOMAIN}`) {
                  return; 
@@ -194,36 +188,17 @@ export default {
                 
                 const subject = message.headers.get('Subject') || "(No Subject)";
                 
-                // Email Body (Plain Text) Extraction Logic (No changes)
-                let bodyText = message.text || "(Email Body is empty)";
+                // 🚨 FINAL BODY EXTRACTION FIX: 
+                // message.text ကို အားကိုးခြင်းဖြင့် (Email Body is empty) ကို ရှောင်ရှားရန်
                 
-                if (bodyText === "(Email Body is empty)") {
-                   try {
-                        const rawContent = await new Response(message.raw).text();
-                        const bodyMatch = rawContent.match(/Content-Type: text\/plain;[\s\S]*?\r?\n\r?\n([\s\S]*)/i);
-                        if (bodyMatch && bodyMatch[1]) {
-                            bodyText = bodyMatch[1].trim();
-                            bodyText = bodyText.split(/On\s+.*wrote:|\r?\n-{2,}\r?\n/i)[0].trim();
-                        }
-                    } catch (e) {
-                        console.error("Error reading raw email body:", e);
-                    }
-                }
-
-                // 🚨 Escape Logic
-                const escapedBodyText = escapeMarkdownV2(bodyText);
-                const escapedSubject = escapeMarkdownV2(subject);
+                let bodyText = message.text || message.html ? "Email Body has HTML content or is empty. Please check the email source for full content." : "(Email Body is empty)";
                 
-                // 🚨 FIX: To/From ကို Mono Font (Inline Code) ထဲထည့်ဖို့အတွက် စာသားကို escape လုပ်ရပါမယ်။
-                const escapedFrom = escapeMarkdownV2(fromDisplay);
-                const escapedTo = escapeMarkdownV2(finalToEmail);
-
-                // 🚨 FIX: Notification Message (Email Address ကို Mono Font ဖြင့်)
-                const notification = `📧 \*Email အသစ် ဝင်လာပြီ\*\n\n` + 
-                                     `*To:* \`${escapedTo || 'Unknown'}\`\n` + // Mono Font
-                                     `*From:* \`${escapedFrom || 'Unknown Sender'}\`\n` + // Mono Font
-                                     `*Subject:* ${escapedSubject.substring(0, 100)}\n\n` +
-                                     `*ကိုယ်ထည်အကျဉ်း:* ${escapedBodyText.substring(0, 300)}...`; 
+                // 📧 notification
+                const notification = `📧 Email အသစ် ဝင်လာပြီ\n\n` + 
+                                     `To: ${finalToEmail || 'Unknown'}\n` + 
+                                     `From: ${fromDisplay || 'Unknown Sender'}\n` + 
+                                     `Subject: ${subject.substring(0, 100)}\n\n` +
+                                     `ကိုယ်ထည်အကျဉ်း:\n${bodyText.substring(0, 300)}...`; 
 
                 await sendTelegramMessage(env, chatIdNumber, notification);
                 
