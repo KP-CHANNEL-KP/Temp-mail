@@ -1,4 +1,4 @@
-// worker.ts (Full Code - FINAL FIX: Forced Header Reading)
+// worker.ts (Full Code - FINAL TWEAK: Check All Headers)
 
 // 🚨 1. Imports and Router Initialization
 import { Router } from 'itty-router';
@@ -10,11 +10,11 @@ interface Env {
   WEBHOOK_SECRET: string; 
   MAIL_KV: KVNamespace; 
 }
-// Email Routing Rule မှာ သတ်မှတ်ထားသော Domain ဖြစ်ပါတယ် (Catch-all ကို ပြန်ထားပါ)
-const TEMP_MAIL_DOMAIN = "kponly.ggff.net"; // <--- ဤနေရာကို kponly.ggff.net သို့ ပြန်ထားပါ
+const TEMP_MAIL_DOMAIN = "kponly.ggff.net"; 
 const TELEGRAM_API = (token: string) => `https://api.telegram.org/bot${token}`;
 
-// 3. Function Definitions (Same as before)
+// 3. Function Definitions (Same as before - not included for brevity)
+// ... (sendTelegramMessage, setWebhook, generateTempMail, handleTelegramWebhook are unchanged)
 
 const sendTelegramMessage = async (env: Env, chatId: number, text: string): Promise<void> => {
   const url = `${TELEGRAM_API(env.BOT_TOKEN)}/sendMessage`;
@@ -114,68 +114,68 @@ export default {
         
         const DOMAIN_PATTERN = `@${TEMP_MAIL_DOMAIN}`; 
 
-        // 🚨 1. message.destination ကို ဦးစားပေး စစ်ဆေးခြင်း
-        if (message.destination && message.destination.endsWith(DOMAIN_PATTERN)) {
+        // Helper function to extract email from potential header values
+        const extractAddress = (headerValue: string | null): string | null => {
+            if (!headerValue) return null;
+            
+            // Handle multiple addresses separated by commas or semicolons
+            const candidates = headerValue.split(/[;,]/).map(s => s.trim());
+            
+            for (const candidate of candidates) {
+                // Look for an address ending with our domain
+                if (candidate.endsWith(DOMAIN_PATTERN)) {
+                    // Extract only the email part if it includes a name/comment (e.g., "Name <address@domain.com>")
+                    const match = candidate.match(/<([^>]+)>/) || candidate.match(/(\S+@\S+)/);
+                    if (match) {
+                        const email = match[1] || match[0];
+                        if (email.endsWith(DOMAIN_PATTERN)) {
+                            return email;
+                        }
+                    }
+                }
+            }
+            return null;
+        };
+        
+        // 🚨 1. Check all possible standard and forwarded headers
+        const headerNames = [
+            'to', 'cc', 'bcc', 'delivered-to', 
+            'x-forwarded-to', 'x-original-to', 'original-recipient'
+        ];
+        
+        for (const name of headerNames) {
+            const headerValue = message.headers.get(name);
+            const extracted = extractAddress(headerValue);
+            if (extracted) {
+                finalToEmail = extracted;
+                console.log(`Found address in header: ${name} -> ${finalToEmail}`);
+                break; 
+            }
+        }
+        
+        // 🚨 2. Fallback: message.destination (Cloudflare direct route or static route)
+        if (!finalToEmail && message.destination && message.destination.endsWith(DOMAIN_PATTERN)) {
             finalToEmail = message.destination;
-        }
-
-        // 🚨 2. message.to ကို အသုံးပြု၍ စစ်ဆေးခြင်း
-        if (!finalToEmail) {
-            const potentialToAddresses = [];
-            const toList = message.to as unknown as Array<{ address: string, name: string }>;
-            if (Array.isArray(toList)) {
-                potentialToAddresses.push(...toList.map(item => item.address));
-            } else if (toList && (toList as any).address) {
-                potentialToAddresses.push((toList as any).address);
-            }
-
-            const foundAddress = potentialToAddresses.find(addr => addr.endsWith(DOMAIN_PATTERN));
-            if (foundAddress) {
-                finalToEmail = foundAddress;
-            }
+            console.log(`Found address in message.destination: ${finalToEmail}`);
         }
         
-        // 🚨 3. FINAL FALLBACK: rcptTo ကို တိုက်ရိုက်ယူခြင်း
-        if (!finalToEmail) {
-             const messageWithRcptTo = message as unknown as { rcptTo?: string };
-             if (messageWithRcptTo.rcptTo && messageWithRcptTo.rcptTo.endsWith(DOMAIN_PATTERN)) {
-                 finalToEmail = messageWithRcptTo.rcptTo;
-             }
-        }
-
-        // 🚨 4. GMAIL FORWARDING FIX: 'Delivered-To' Header ကို စစ်ဆေးခြင်း
-        // Gmail Forwarding လုပ်တဲ့အခါ Worker ကို ပို့တဲ့ address က 'Delivered-To' မှာ ပါလာတတ်ပါတယ်
-        if (!finalToEmail) {
-            const deliveredToHeader = message.headers.get('Delivered-To');
-            if (deliveredToHeader && deliveredToHeader.endsWith(DOMAIN_PATTERN)) {
-                // ဒီနေရာမှာ finalToEmail က bot10temp@kponly.ggff.net ဖြစ်နေနိုင်ပေမယ့်၊
-                // ဒီ header ကို ဖတ်ရခြင်းက Worker ကို စာရောက်လာကြောင်း အတည်ပြုပါတယ်။
-                // ဒါကြောင့် ဒီအဆင့်ကို ကျော်သွားပါမယ်။
-            }
+        // 🚨 3. Final Fallback: rcptTo (Which will be 'bot10temp' in this case, but we try anyway)
+        const messageWithRcptTo = message as unknown as { rcptTo?: string };
+        if (!finalToEmail && messageWithRcptTo.rcptTo && messageWithRcptTo.rcptTo.endsWith(DOMAIN_PATTERN)) {
+            finalToEmail = messageWithRcptTo.rcptTo;
+            console.log(`Found address in rcptTo: ${finalToEmail}`);
         }
         
-        // 🚨 5. GMAIL FORWARDING FIX: Original 'To' or 'Cc' Headers ကို စစ်ဆေးခြင်း
-        if (!finalToEmail) {
-            const rawHeaders = message.headers;
-            
-            // Gmail က To/Cc ကို 'X-Forwarded-To' တို့ 'Original-Recipient' တို့အဖြစ် ပြောင်းတတ်ပါတယ်
-            const forwardedTo = rawHeaders.get('X-Forwarded-To');
-            const originalTo = rawHeaders.get('Original-Recipient'); 
-            
-            let candidateAddress = forwardedTo || originalTo;
-            
-            if (candidateAddress && candidateAddress.includes(';')) {
-                // မျိုးစုံ ပါလာရင် ပထမဆုံး Address ကို ယူခြင်း
-                candidateAddress = candidateAddress.split(';')[0].trim();
-            }
-
-            if (candidateAddress && candidateAddress.endsWith(DOMAIN_PATTERN)) {
-                finalToEmail = candidateAddress;
-            }
-        }
-
-        // 6. Final To Address မှ username ကို ခိုင်မာစွာ ခွဲထုတ်ခြင်း
+        // 4. Final Check and Username Extraction
         if (finalToEmail) {
+            // If the final address is the static bot address, we MUST fail as we can't determine the KV key.
+            if (finalToEmail === `bot10temp@${TEMP_MAIL_DOMAIN}`) {
+                 // We MUST find the original address, otherwise we don't know the recipient.
+                 console.error('Email Handler FATAL Error: finalToEmail is the static bot address, but could not find original address in headers.');
+                 message.setReject('Could not determine original temporary address for forwarding.');
+                 return;
+            }
+            
             const usernameMatch = finalToEmail.match(/^([^@]+)@/);
 
             if (usernameMatch && usernameMatch[1]) {
@@ -192,7 +192,7 @@ export default {
 
         const fromDisplay = message.from; 
 
-        // 7. KV မှ chat ID ကို ပြန်ရှာပါ
+        // 5. KV မှ chat ID ကို ပြန်ရှာပါ
         if (username) {
             const chatIdString = await env.MAIL_KV.get(username); 
             
