@@ -1,4 +1,4 @@
-// worker.ts (FINAL & COMPLETE VERSION with Markdown Escape Fix)
+// worker.ts (FINAL & COMPLETE VERSION with Full Markdown Escape)
 
 // 🚨 1. Imports and Router Initialization
 import { Router } from 'itty-router';
@@ -15,10 +15,12 @@ const TELEGRAM_API = (token: string) => `https://api.telegram.org/bot${token}`;
 
 // 3. Function Definitions 
 
-// 🚨 NEW: Markdown V2 Escape Function
+// 🚨 FIX: Markdown V2 Escape Function (Dot and other reserved characters)
 const escapeMarkdownV2 = (text: string): string => {
-  // Telegram Markdown V2 မှာ escape လုပ်ရမယ့် စာလုံးများ
-  return text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1');
+  // Telegram Markdown V2 တွင် အမြဲတမ်း Escape လုပ်ရမည့်စာလုံးများ
+  // (Source/To/Subject/Body များကို ပို့ရာတွင် error မတက်စေရန်)
+  // [_*[\]()~>#+=|{}.!-]
+  return text.replace(/([_*[\]()~>#+=|{}.!-])/g, '\\$1');
 };
 
 const sendTelegramMessage = async (env: Env, chatId: number, text: string): Promise<void> => {
@@ -35,7 +37,6 @@ const sendTelegramMessage = async (env: Env, chatId: number, text: string): Prom
   });
 
   if (!response.ok) {
-    // 🚨 400 Error Message ကို console တွင် ပိုမိုရှင်းလင်းစွာ ဖော်ပြခြင်း
     const errorBody = await response.text();
     console.error(`Failed to send Telegram message: ${response.status} ${response.statusText}. Response: ${errorBody}`);
   }
@@ -203,7 +204,9 @@ export default {
                 if (bodyText === "(Email Body is empty)") {
                    try {
                         const rawContent = await new Response(message.raw).text();
+                        
                         const bodyMatch = rawContent.match(/Content-Type: text\/plain;[\s\S]*?\r?\n\r?\n([\s\S]*)/i);
+                        
                         if (bodyMatch && bodyMatch[1]) {
                             bodyText = bodyMatch[1].trim();
                             bodyText = bodyText.split(/On\s+.*wrote:|\r?\n-{2,}\r?\n/i)[0].trim();
@@ -216,15 +219,17 @@ export default {
                     }
                 }
                 
-                // 🚨 FIX: Email Body ကို ပို့မည့်အခါ Escape လုပ်ခြင်း
+                // 🚨 FIX: Email Body နှင့် Headers များကို Escape လုပ်ခြင်း
                 const escapedBodyText = escapeMarkdownV2(bodyText);
                 const escapedSubject = escapeMarkdownV2(subject);
+                
+                // 🚨 Email Address များကို Inline Code Block ထဲမှာ ထည့်ရန်
                 const escapedFrom = escapeMarkdownV2(fromDisplay);
                 const escapedTo = escapeMarkdownV2(finalToEmail);
 
-                // 🚨 Notification Message ကို MarkdownV2 ဖြင့် ဖော်ပြခြင်း
+                // Notification Message ကို MarkdownV2 ဖြင့် ဖော်ပြခြင်း
                 const notification = `📧 \*Email အသစ် ဝင်လာပြီ\*\n\n` + 
-                                     `*To:* \`${escapedTo || 'Unknown'}\`\n` +
+                                     `*To:* \`${escapedTo || 'Unknown'}\`\n` + 
                                      `*From:* \`${escapedFrom || 'Unknown Sender'}\`\n` + 
                                      `*Subject:* ${escapedSubject.substring(0, 100)}\n\n` +
                                      `*ကိုယ်ထည်အကျဉ်း:* ${escapedBodyText.substring(0, 300)}...`; 
