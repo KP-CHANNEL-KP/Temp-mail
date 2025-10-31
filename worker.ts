@@ -24,7 +24,7 @@ const sendTelegramMessage = async (env: Env, chatId: number, text: string): Prom
     body: JSON.stringify({
       chat_id: chatId,
       text: text,
-      parse_mode: 'Markdown',
+      // 🚨 parse_mode: 'Markdown' ကို ဖျက်လိုက်ပါ
     }),
   });
 
@@ -201,11 +201,11 @@ export default {
                 const subject = message.subject || "(No Subject)";
                 const bodyText = message.text || "(Email Body is empty)";
                 
-                const notification = `📧 **Email အသစ် ဝင်လာပြီ**\n\n` + 
-                                     `*To:* \`${finalToEmail || 'Unknown'}\`\n` +
-                                     `*From:* ${fromDisplay || 'Unknown Sender'}\n` + 
-                                     `*Subject:* ${subject.substring(0, 100)}\n\n` +
-                                     `*ကိုယ်ထည်အကျဉ်း:* ${bodyText.substring(0, 300)}...`; 
+                const notification = `📧 Email အသစ် ဝင်လာပြီ\n\n` + 
+                     `To: ${finalToEmail || 'Unknown'}\n` +
+                     `From: ${fromDisplay || 'Unknown Sender'}\n` + 
+                     `Subject: ${subject.substring(0, 100)}\n\n` +
+                     `ကိုယ်ထည်အကျဉ်း: ${bodyText.substring(0, 300)}...`; 
 
                 await sendTelegramMessage(env, chatIdNumber, notification);
                 
