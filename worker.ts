@@ -1,76 +1,89 @@
-// worker.ts (FINAL & COMPLETE VERSION - Copyable Mono-Font Email Fix)
+// ... (All Function Definitions: sendTelegramMessage, setWebhook, generateTempMail, handleTelegramWebhook are the same)
 
-// ... (Imports and Configuration are the same)
-import { Router } from 'itty-router';
-const router = Router(); 
-// ... (Env, Domain, API definitions are the same)
+// 4. Router Binding (HTTP Request Entry Point)
+router
+  .post('/webhook', (request, env) => handleTelegramWebhook(env as Env, request))
+  .get('/registerWebhook', (request, env) => setWebhook(env as Env, request))
+  .all('*', () => new Response('Not Found', { status: 404 }));
 
-// 3. Function Definitions 
-
-const sendTelegramMessage = async (env: Env, chatId: number, text: string): Promise<void> => {
-  const url = `${TELEGRAM_API(env.BOT_TOKEN)}/sendMessage`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: text,
-      // 🚨 FIX: Markdown (Inline Code) ကို ပြန်လည် အသုံးပြုရန် parse_mode ပြန်ထည့်ပါ
-      parse_mode: 'Markdown',
-    }),
-  });
-
-  if (!response.ok) {
-    console.error(`Failed to send Telegram message: ${response.status} ${response.statusText}`);
-  }
-};
-
-// ... (setWebhook function is the same)
-// ... (generateTempMail function is the same)
-
-const handleTelegramWebhook = async (env: Env, request: Request): Promise<Response> => {
-  const secret = request.headers.get('X-Telegram-Bot-Api-Secret-Token');
-  if (secret !== env.WEBHOOK_SECRET) {
-    return new Response('Unauthorized', { status: 403 });
-  }
-
-  try {
-    const update = await request.json() as any;
-
-    if (update.message && update.message.text) {
-      const chatId = update.message.chat.id;
-      const text = update.message.text.trim();
-
-      if (text === '/generate') {
-        const tempMail = await generateTempMail(env, chatId);
-        // 🚨 FIX: Email Address ကို Markdown Inline Code (\`...\`) ဖြင့် ပြောင်းလဲ
-        const message = `🎉 **Temp Mail Address:** \n\`${tempMail}\`\n\n` +
-                        `ဒီအီးမေးလ်က တစ်နာရီကြာအောင် သက်တမ်းကုန်ဆုံးပါမယ်။`;
-        await sendTelegramMessage(env, chatId, message);
-      } else if (text === '/start') {
-        const message = `👋 Hi! ယာယီအီးမေးလ် လိပ်စာတစ်ခု ဖန်တီးဖို့အတွက် /generate လို့ ရိုက်ထည့်ပါ။`;
-        await sendTelegramMessage(env, chatId, message);
-      }
-      return new Response('OK', { status: 200 }); 
-    }
-    
-    return new Response('OK', { status: 200 }); 
-
-  } catch (e) {
-    const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-    console.error('Webhook Handler Error:', errorMessage);
-    return new Response('OK (Error handled)', { status: 200 }); 
-  }
-};
-
-
-// ... (Router Binding is the same)
-// ... (export default and email function starts here)
+// 5. Export Default (Entry Points)
+// 🚨 FIX: email function ကို Object property syntax ဖြင့် ပြန်လည်ရေးသားခြင်း
+export default {
+  fetch: router.handle, 
 
   async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
     try {
-// ... (All Header & Username Extraction Logic remains the same)
-// ...
+        let username: string | null = null;
+        let finalToEmail: string | null = null;
+        
+        const DOMAIN_PATTERN = `@${TEMP_MAIL_DOMAIN}`; 
+
+        // Helper function to extract email from potential header values
+        const extractAddress = (headerValue: string | null): string | null => {
+            if (!headerValue) return null;
+            
+            const candidates = headerValue.split(/[;,]/).map(s => s.trim());
+            
+            for (const candidate of candidates) {
+                if (candidate.endsWith(DOMAIN_PATTERN)) {
+                    const match = candidate.match(/<([^>]+)>/) || candidate.match(/(\S+@\S+)/);
+                    if (match) {
+                        const email = match[1] || match[0];
+                        if (email.endsWith(DOMAIN_PATTERN)) {
+                            return email;
+                        }
+                    }
+                }
+            }
+            return null;
+        };
+        
+        // 1. Check all possible standard and forwarded headers (Logic is the same)
+        const headerNames = [
+            'to', 'cc', 'bcc', 'delivered-to', 
+            'x-forwarded-to', 'x-original-to', 'original-recipient', 'envelope-to'
+        ];
+        
+        for (const name of headerNames) {
+            const headerValue = message.headers.get(name);
+            const extracted = extractAddress(headerValue);
+            if (extracted) {
+                finalToEmail = extracted;
+                break; 
+            }
+        }
+        
+        // 2 & 3. Fallbacks (Logic is the same)
+        if (!finalToEmail && message.destination && message.destination.endsWith(DOMAIN_PATTERN)) {
+            finalToEmail = message.destination;
+        }
+        
+        const messageWithRcptTo = message as unknown as { rcptTo?: string };
+        if (!finalToEmail && messageWithRcptTo.rcptTo && messageWithRcptTo.rcptTo.endsWith(DOMAIN_PATTERN)) {
+            finalToEmail = messageWithRcptTo.rcptTo;
+        }
+        
+        // 4. Final Check and Username Extraction (Logic is the same)
+        if (finalToEmail) {
+            if (finalToEmail === `bot10temp@${TEMP_MAIL_DOMAIN}`) {
+                 return; 
+            }
+            
+            const usernameMatch = finalToEmail.match(/^([^@]+)@/);
+
+            if (usernameMatch && usernameMatch[1]) {
+                username = usernameMatch[1];
+            } else {
+                console.error('Email Handler FATAL Error: Cannot extract username from:', finalToEmail);
+                return; 
+            }
+        } else {
+             console.error('Email Handler FATAL Error: Cannot proceed without finalToEmail.');
+             return;
+        }
+
+        const fromDisplay = message.from; 
+
         // 5. KV မှ chat ID ကို ပြန်ရှာပါ
         if (username) {
             const chatIdString = await env.MAIL_KV.get(username); 
@@ -78,14 +91,12 @@ const handleTelegramWebhook = async (env: Env, request: Request): Promise<Respon
             if (chatIdString) {
                 const chatIdNumber = parseInt(chatIdString); 
                 
-                // Subject ကို Headers ကနေ တိုက်ရိုက် ဖတ်ယူခြင်း
                 const subject = message.headers.get('Subject') || "(No Subject)";
                 
-                // Raw Body Extraction Logic (Remains the same as before)
+                // Raw Body Extraction Logic (Logic is the same)
                 let bodyText = message.text || "(Email Body is empty)";
                 
                 if (bodyText === "(Email Body is empty)") {
-                   // ... (Raw Content Logic)
                    try {
                         const rawContent = await new Response(message.raw).text();
                         const bodyMatch = rawContent.match(/Content-Type: text\/plain;[\s\S]*?\r?\n\r?\n([\s\S]*)/i);
@@ -101,7 +112,7 @@ const handleTelegramWebhook = async (env: Env, request: Request): Promise<Respon
                     }
                 }
                 
-                // 🚨 FIX: Notification Message ကို Markdown (Inline Code မသုံးပါ) ဖြင့် ပြန်ပြင်
+                // Notification Message (Logic is the same)
                 const notification = `📧 **Email အသစ် ဝင်လာပြီ**\n\n` + 
                                      `*To:* ${finalToEmail || 'Unknown'}\n` +
                                      `*From:* ${fromDisplay || 'Unknown Sender'}\n` + 
@@ -110,8 +121,18 @@ const handleTelegramWebhook = async (env: Env, request: Request): Promise<Respon
 
                 await sendTelegramMessage(env, chatIdNumber, notification);
                 
-                // ... (Console Log is the same)
+                console.log(`Email successfully forwarded to Telegram Chat ID: ${chatIdNumber} for user: ${username}`);
                 return;
-            } 
-            // ... (else block and catch block remain the same)
-// ...
+            } else {
+                console.log(`Rejecting expired email for user: ${username}`);
+                return;
+            }
+        }
+
+
+    } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+        console.error('Email Handler FATAL Error in try block:', errorMessage);
+    }
+  }
+};
