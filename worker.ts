@@ -1,4 +1,4 @@
-// worker.ts (Full Code - FINAL, All Fixes Included)
+// worker.ts (Full Code - FINAL FIX: Forced Header Reading)
 
 // 🚨 1. Imports and Router Initialization
 import { Router } from 'itty-router';
@@ -14,7 +14,7 @@ interface Env {
 const TEMP_MAIL_DOMAIN = "kponly.ggff.net"; // <--- ဤနေရာကို kponly.ggff.net သို့ ပြန်ထားပါ
 const TELEGRAM_API = (token: string) => `https://api.telegram.org/bot${token}`;
 
-// 3. Function Definitions 
+// 3. Function Definitions (Same as before)
 
 const sendTelegramMessage = async (env: Env, chatId: number, text: string): Promise<void> => {
   const url = `${TELEGRAM_API(env.BOT_TOKEN)}/sendMessage`;
@@ -97,7 +97,7 @@ const handleTelegramWebhook = async (env: Env, request: Request): Promise<Respon
 };
 
 
-// 4. Router Binding
+// 4. Router Binding (Same as before)
 router
   .post('/webhook', (request, env) => handleTelegramWebhook(env as Env, request))
   .get('/registerWebhook', (request, env) => setWebhook(env as Env, request))
@@ -114,12 +114,12 @@ export default {
         
         const DOMAIN_PATTERN = `@${TEMP_MAIL_DOMAIN}`; 
 
-        // 1. message.destination ကို ဦးစားပေး စစ်ဆေးခြင်း
+        // 🚨 1. message.destination ကို ဦးစားပေး စစ်ဆေးခြင်း
         if (message.destination && message.destination.endsWith(DOMAIN_PATTERN)) {
             finalToEmail = message.destination;
         }
 
-        // 2. Fallback: message.to ကို အသုံးပြု၍ စစ်ဆေးခြင်း
+        // 🚨 2. message.to ကို အသုံးပြု၍ စစ်ဆေးခြင်း
         if (!finalToEmail) {
             const potentialToAddresses = [];
             const toList = message.to as unknown as Array<{ address: string, name: string }>;
@@ -135,21 +135,46 @@ export default {
             }
         }
         
-        // 🚨 3. FINAL FALLBACK: rcptTo ကို တိုက်ရိုက်ယူခြင်း (Invocation Log မှ တွေ့ရှိရသော Property ကို အသုံးပြုခြင်း)
+        // 🚨 3. FINAL FALLBACK: rcptTo ကို တိုက်ရိုက်ယူခြင်း
         if (!finalToEmail) {
              const messageWithRcptTo = message as unknown as { rcptTo?: string };
              if (messageWithRcptTo.rcptTo && messageWithRcptTo.rcptTo.endsWith(DOMAIN_PATTERN)) {
                  finalToEmail = messageWithRcptTo.rcptTo;
              }
         }
-        
-        // 4. To Address မရရှိသေးရင်တောင် Reject မလုပ်ဘဲ Log ထုတ်ပြီး ဆက်လုပ်ပါ
+
+        // 🚨 4. GMAIL FORWARDING FIX: 'Delivered-To' Header ကို စစ်ဆေးခြင်း
+        // Gmail Forwarding လုပ်တဲ့အခါ Worker ကို ပို့တဲ့ address က 'Delivered-To' မှာ ပါလာတတ်ပါတယ်
         if (!finalToEmail) {
-             console.error('Email Handler Warning: To address still could not be determined. Attempting to extract from any available data.');
-             // Reject လုပ်ခြင်းကို ဖယ်ရှားထားပါသည်
+            const deliveredToHeader = message.headers.get('Delivered-To');
+            if (deliveredToHeader && deliveredToHeader.endsWith(DOMAIN_PATTERN)) {
+                // ဒီနေရာမှာ finalToEmail က bot10temp@kponly.ggff.net ဖြစ်နေနိုင်ပေမယ့်၊
+                // ဒီ header ကို ဖတ်ရခြင်းက Worker ကို စာရောက်လာကြောင်း အတည်ပြုပါတယ်။
+                // ဒါကြောင့် ဒီအဆင့်ကို ကျော်သွားပါမယ်။
+            }
+        }
+        
+        // 🚨 5. GMAIL FORWARDING FIX: Original 'To' or 'Cc' Headers ကို စစ်ဆေးခြင်း
+        if (!finalToEmail) {
+            const rawHeaders = message.headers;
+            
+            // Gmail က To/Cc ကို 'X-Forwarded-To' တို့ 'Original-Recipient' တို့အဖြစ် ပြောင်းတတ်ပါတယ်
+            const forwardedTo = rawHeaders.get('X-Forwarded-To');
+            const originalTo = rawHeaders.get('Original-Recipient'); 
+            
+            let candidateAddress = forwardedTo || originalTo;
+            
+            if (candidateAddress && candidateAddress.includes(';')) {
+                // မျိုးစုံ ပါလာရင် ပထမဆုံး Address ကို ယူခြင်း
+                candidateAddress = candidateAddress.split(';')[0].trim();
+            }
+
+            if (candidateAddress && candidateAddress.endsWith(DOMAIN_PATTERN)) {
+                finalToEmail = candidateAddress;
+            }
         }
 
-        // 5. Final To Address မှ username ကို ခိုင်မာစွာ ခွဲထုတ်ခြင်း
+        // 6. Final To Address မှ username ကို ခိုင်မာစွာ ခွဲထုတ်ခြင်း
         if (finalToEmail) {
             const usernameMatch = finalToEmail.match(/^([^@]+)@/);
 
@@ -157,18 +182,17 @@ export default {
                 username = usernameMatch[1];
             } else {
                 console.error('Email Handler FATAL Error: Cannot extract username from:', finalToEmail);
-                // Reject မလုပ်ဘဲ ထွက်ပါ
                 return; 
             }
         } else {
-             // finalToEmail မရှိရင်တောင် username ကို ထုတ်လို့မရနိုင်ပါဘူး။
-             console.error('Email Handler FATAL Error: Cannot proceed without finalToEmail.');
+             // ဤနေရာတွင် reject မလုပ်ဘဲ၊ စာလုံးဝ မရှာနိုင်လျှင်သာ Fatal Error ပြပါမည်
+             console.error('Email Handler FATAL Error: Cannot proceed without finalToEmail. (Final Fallback Failed)');
              return;
         }
 
         const fromDisplay = message.from; 
 
-        // 6. KV မှ chat ID ကို ပြန်ရှာပါ
+        // 7. KV မှ chat ID ကို ပြန်ရှာပါ
         if (username) {
             const chatIdString = await env.MAIL_KV.get(username); 
             
