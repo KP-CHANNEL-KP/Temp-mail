@@ -1,4 +1,4 @@
-// worker.ts (FINAL & COMPLETE VERSION with Full Markdown Escape)
+// worker.ts (ULTIMATE FINAL COMPLETE VERSION)
 
 // 🚨 1. Imports and Router Initialization
 import { Router } from 'itty-router';
@@ -15,12 +15,10 @@ const TELEGRAM_API = (token: string) => `https://api.telegram.org/bot${token}`;
 
 // 3. Function Definitions 
 
-// 🚨 FIX: Markdown V2 Escape Function (Dot and other reserved characters)
+// 🚨 ULTIMATE FIX: Markdown V2 Escape Function (Backslash ကိုပါ Escape လုပ်ခြင်း)
 const escapeMarkdownV2 = (text: string): string => {
-  // Telegram Markdown V2 တွင် အမြဲတမ်း Escape လုပ်ရမည့်စာလုံးများ
-  // (Source/To/Subject/Body များကို ပို့ရာတွင် error မတက်စေရန်)
-  // [_*[\]()~>#+=|{}.!-]
-  return text.replace(/([_*[\]()~>#+=|{}.!-])/g, '\\$1');
+  // Markdown V2 တွင် Reserved Characters အားလုံးကို Escape လုပ်သည်။
+  return text.replace(/([_*[\]()~>#+=|{}.!-\\])/g, '\\$1');
 };
 
 const sendTelegramMessage = async (env: Env, chatId: number, text: string): Promise<void> => {
@@ -31,7 +29,6 @@ const sendTelegramMessage = async (env: Env, chatId: number, text: string): Prom
     body: JSON.stringify({
       chat_id: chatId,
       text: text,
-      // Markdown V2 ကို အသုံးပြုပါမည်။
       parse_mode: 'MarkdownV2', 
     }),
   });
@@ -86,7 +83,7 @@ const handleTelegramWebhook = async (env: Env, request: Request): Promise<Respon
 
       if (text === '/generate') {
         const tempMail = await generateTempMail(env, chatId);
-        // 🚨 MarkdownV2 ဖြင့် Email Address ကို ရှင်းရှင်းလင်းလင်း ဖော်ပြခြင်း
+        // Copyable Mono-font
         const message = `🎉 \*Temp Mail Address:\* \n\`${tempMail}\`\n\n` +
                         `ဒီအီးမေးလ်က တစ်နာရီကြာအောင် သက်တမ်းကုန်ဆုံးပါမယ်။`;
         await sendTelegramMessage(env, chatId, message);
@@ -124,7 +121,7 @@ export default {
         
         const DOMAIN_PATTERN = `@${TEMP_MAIL_DOMAIN}`; 
 
-        // Helper function to extract email address... (Logic is the same)
+        // Helper function to extract email address...
         const extractAddress = (headerValue: string | null): string | null => {
             if (!headerValue) return null;
             
@@ -144,7 +141,7 @@ export default {
             return null;
         };
         
-        // Header & Fallback Logic is the same...
+        // Header & Fallback Logic
         const headerNames = [
             'to', 'cc', 'bcc', 'delivered-to', 
             'x-forwarded-to', 'x-original-to', 'original-recipient', 'envelope-to'
@@ -168,7 +165,7 @@ export default {
             finalToEmail = messageWithRcptTo.rcptTo;
         }
         
-        // Final Check and Username Extraction Logic is the same...
+        // Final Check and Username Extraction Logic
         if (finalToEmail) {
             if (finalToEmail === `bot10temp@${TEMP_MAIL_DOMAIN}`) {
                  return; 
@@ -198,7 +195,7 @@ export default {
                 
                 const subject = message.headers.get('Subject') || "(No Subject)";
                 
-                // Raw Body Extraction Logic is the same...
+                // Raw Body Extraction Logic
                 let bodyText = message.text || "(Email Body is empty)";
                 
                 if (bodyText === "(Email Body is empty)") {
@@ -223,7 +220,7 @@ export default {
                 const escapedBodyText = escapeMarkdownV2(bodyText);
                 const escapedSubject = escapeMarkdownV2(subject);
                 
-                // 🚨 Email Address များကို Inline Code Block ထဲမှာ ထည့်ရန်
+                // Email Address များကို Inline Code Block ထဲမှာ ထည့်ရန်
                 const escapedFrom = escapeMarkdownV2(fromDisplay);
                 const escapedTo = escapeMarkdownV2(finalToEmail);
 
